@@ -12,7 +12,6 @@ void main() {
     );
     final existingManaged = ManagedService(
       id: 'managed-1',
-      serverId: 'server-1',
       serviceName: 'nginx.service',
       pinnedAt: '2026-03-10T00:00:00Z',
     );
@@ -37,7 +36,7 @@ void main() {
     expect(preview.errors, isEmpty);
   });
 
-  test('previewImport remaps managed services when imported server ids collide', () {
+  test('previewImport keeps managed services global across all servers', () {
     final existingServer = ServerProfile(
       id: 'server-1',
       name: 'prod',
@@ -52,7 +51,6 @@ void main() {
     );
     final importedManaged = ManagedService(
       id: 'managed-1',
-      serverId: 'server-1',
       serviceName: 'docker.service',
       pinnedAt: '2026-03-10T00:00:00Z',
     );
@@ -70,10 +68,7 @@ void main() {
 
     expect(preview.addedServers, 1);
     expect(preview.serversToInsert.single.id, isNot(importedServer.id));
-    expect(
-      preview.managedServicesToInsert.single.serverId,
-      preview.serversToInsert.single.id,
-    );
+    expect(preview.managedServicesToInsert.single.serviceName, 'docker.service');
     expect(preview.errors, isEmpty);
   });
 }

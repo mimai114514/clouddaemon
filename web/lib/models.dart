@@ -47,20 +47,17 @@ class ServerProfile {
 class ManagedService {
   ManagedService({
     required this.id,
-    required this.serverId,
     required this.serviceName,
     required this.pinnedAt,
   });
 
   final String id;
-  final String serverId;
   final String serviceName;
   final String pinnedAt;
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'server_id': serverId,
       'service_name': serviceName,
       'pinned_at': pinnedAt,
     };
@@ -69,7 +66,6 @@ class ManagedService {
   static ManagedService fromJson(Map<String, dynamic> json) {
     return ManagedService(
       id: json['id'] as String,
-      serverId: json['server_id'] as String,
       serviceName: json['service_name'] as String,
       pinnedAt: json['pinned_at'] as String,
     );

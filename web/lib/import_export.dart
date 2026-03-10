@@ -35,11 +35,8 @@ ImportPreview previewImport({
     for (final server in existingServers) server.id: server,
   };
   final existingManagedKeys = {
-    for (final managed in existingManagedServices)
-      _managedKey(managed.serverId, managed.serviceName): managed,
+    for (final managed in existingManagedServices) _managedKey(managed.serviceName): managed,
   };
-
-  final importedToActualServerId = <String, String>{};
   final serversToInsert = <ServerProfile>[];
   var skippedServers = 0;
 
@@ -48,7 +45,6 @@ ImportPreview previewImport({
     final matchingServer = existingServerBySignature[signature];
     if (matchingServer != null) {
       skippedServers++;
-      importedToActualServerId[importedServer.id] = matchingServer.id;
       continue;
     }
 
@@ -58,7 +54,6 @@ ImportPreview previewImport({
       serverToInsert = importedServer.copyWith(id: _uuid.v4());
     }
 
-    importedToActualServerId[importedServer.id] = serverToInsert.id;
     existingServerById[serverToInsert.id] = serverToInsert;
     existingServerBySignature[_serverSignature(serverToInsert)] = serverToInsert;
     serversToInsert.add(serverToInsert);
@@ -69,20 +64,10 @@ ImportPreview previewImport({
   var skippedManagedServices = 0;
 
   for (final importedManaged in bundle.managedServices) {
-    final resolvedServerId = importedToActualServerId[importedManaged.serverId];
-    if (resolvedServerId == null) {
-      errors.add(
-        'Managed service ${importedManaged.serviceName} references missing server ${importedManaged.serverId}.',
-      );
-      continue;
-    }
-
-    final key = _managedKey(resolvedServerId, importedManaged.serviceName);
+    final key = _managedKey(importedManaged.serviceName);
     if (existingManagedKeys.containsKey(key) ||
         managedServicesToInsert.any(
-          (managed) =>
-              managed.serverId == resolvedServerId &&
-              managed.serviceName == importedManaged.serviceName,
+          (managed) => managed.serviceName == importedManaged.serviceName,
         )) {
       skippedManagedServices++;
       continue;
@@ -90,7 +75,6 @@ ImportPreview previewImport({
 
     var managedToInsert = ManagedService(
       id: importedManaged.id,
-      serverId: resolvedServerId,
       serviceName: importedManaged.serviceName,
       pinnedAt: importedManaged.pinnedAt,
     );
@@ -98,7 +82,6 @@ ImportPreview previewImport({
         managedServicesToInsert.any((managed) => managed.id == managedToInsert.id)) {
       managedToInsert = ManagedService(
         id: _uuid.v4(),
-        serverId: resolvedServerId,
         serviceName: importedManaged.serviceName,
         pinnedAt: importedManaged.pinnedAt,
       );
@@ -129,6 +112,6 @@ String _serverSignature(ServerProfile server) {
   return '${server.name}|${server.baseUrl}|${server.token}';
 }
 
-String _managedKey(String serverId, String serviceName) {
-  return '$serverId|$serviceName';
+String _managedKey(String serviceName) {
+  return serviceName;
 }

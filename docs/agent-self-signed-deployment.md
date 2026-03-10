@@ -72,6 +72,7 @@ sudo openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 3650 \
 ```bash
 sudo chmod 600 /etc/clouddaemon/tls.key
 sudo chmod 644 /etc/clouddaemon/tls.crt
+sudo chmod +x /opt/clouddaemon/clouddaemon-agent
 ```
 
 ## 4. 配置 agent
@@ -89,7 +90,7 @@ log_tail_default_lines: 200
 
 配置建议：
 - `admin_token` 使用足够长的随机字符串
-- `allowed_origins` 填你的 Web 端真实访问域名
+- `allowed_origins` 填你的 Web 端真实访问域名(尾部不要带/)
 - 如果 Web 端会同时从多个域名访问，就把这些域名都加进去
 
 ## 5. 创建 systemd 服务

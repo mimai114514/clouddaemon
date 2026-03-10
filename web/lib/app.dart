@@ -41,34 +41,12 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF0F766E),
-        brightness: Brightness.light,
-      ),
-      scaffoldBackgroundColor: const Color(0xFFF3F7F4),
-      useMaterial3: true,
-      fontFamily: 'Georgia',
-      cardTheme: CardThemeData(
-        color: Colors.white,
-        elevation: 0,
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: const Color(0xFFF8FBF8),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
-      ),
-    );
-
     return MaterialApp(
       title: 'CloudDaemon',
       debugShowCheckedModeBanner: false,
-      theme: theme,
+      theme: _buildTheme(Brightness.light),
+      darkTheme: _buildTheme(Brightness.dark),
+      themeMode: ThemeMode.system,
       home: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
@@ -175,7 +153,7 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
           builder: (_) => AlertDialog(
             title: Text('Delete ${server.name}?'),
             content: const Text(
-              'This removes the server and all managed services attached to it.',
+              'This removes the server profile only. Managed service favorites stay available for other servers.',
             ),
             actions: [
               TextButton(
@@ -294,9 +272,10 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
   }
 
   void _showMessage(BuildContext context, String message, {bool isError = false}) {
+    final colorScheme = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: isError ? const Color(0xFF7F1D1D) : const Color(0xFF115E59),
+        backgroundColor: isError ? colorScheme.error : colorScheme.primary,
         content: Text(message),
       ),
     );
@@ -362,11 +341,7 @@ class AppController extends ChangeNotifier {
   }
 
   List<ManagedService> managedForSelectedServer() {
-    final server = selectedServer;
-    if (server == null) {
-      return const <ManagedService>[];
-    }
-    return managedServices.where((managed) => managed.serverId == server.id).toList();
+    return managedServices;
   }
 
   Future<void> initialize() async {
@@ -413,13 +388,12 @@ class AppController extends ChangeNotifier {
     }
     await _storage.deleteServer(server.id);
     servers = servers.where((item) => item.id != server.id).toList();
-    managedServices =
-        managedServices.where((item) => item.serverId != server.id).toList();
     discoveredServicesByServer.remove(server.id);
     serverPings.remove(server.id);
     serverErrors.remove(server.id);
     selectedServerId = servers.isEmpty ? null : servers.first.id;
     notifyListeners();
+    await refreshManagedStatuses();
   }
 
   Future<void> selectServer(String serverId) async {
@@ -428,6 +402,7 @@ class AppController extends ChangeNotifier {
     await Future.wait(<Future<void>>[
       refreshServerPing(selectedServer),
       refreshDiscoveredServices(),
+      refreshManagedStatuses(),
     ]);
   }
 
@@ -474,13 +449,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> addManagedService(ServiceSummary service) async {
-    final server = selectedServer;
-    if (server == null) {
-      return;
-    }
     final exists = managedServices.any(
-      (managed) =>
-          managed.serverId == server.id && managed.serviceName == service.unitName,
+      (managed) => managed.serviceName == service.unitName,
     );
     if (exists) {
       return;
@@ -488,7 +458,6 @@ class AppController extends ChangeNotifier {
 
     final managedService = ManagedService(
       id: _uuid.v4(),
-      serverId: server.id,
       serviceName: service.unitName,
       pinnedAt: DateTime.now().toUtc().toIso8601String(),
     );
@@ -507,7 +476,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> refreshManagedStatuses() async {
-    if (managedServices.isEmpty) {
+    final server = selectedServer;
+    if (managedServices.isEmpty || server == null) {
       managedStatuses = {};
       managedRefreshedAt = {};
       notifyListeners();
@@ -521,15 +491,12 @@ class AppController extends ChangeNotifier {
 
     await Future.wait(
       managedServices.map((managed) async {
-        final server = _findServerById(managed.serverId);
-        if (server == null) {
-          return;
-        }
         try {
           final summary =
               await AgentApiClient(server).getService(managed.serviceName);
-          nextStatuses[managed.id] = summary;
-          nextRefreshedAt[managed.id] = DateTime.now();
+          final key = _managedStatusKey(server.id, managed.id);
+          nextStatuses[key] = summary;
+          nextRefreshedAt[key] = DateTime.now();
         } on ApiError catch (error) {
           serverErrors = {...serverErrors, server.id: error.message};
         }
@@ -543,16 +510,17 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> performAction(ManagedService managedService, String action) async {
-    final server = _findServerById(managedService.serverId);
+    final server = selectedServer;
     if (server == null) {
       throw ApiError('Server not found for ${managedService.serviceName}.');
     }
     final summary =
         await AgentApiClient(server).performAction(managedService.serviceName, action);
-    managedStatuses = {...managedStatuses, managedService.id: summary};
+    final key = _managedStatusKey(server.id, managedService.id);
+    managedStatuses = {...managedStatuses, key: summary};
     managedRefreshedAt = {
       ...managedRefreshedAt,
-      managedService.id: DateTime.now(),
+      key: DateTime.now(),
     };
     notifyListeners();
   }
@@ -578,15 +546,6 @@ class AppController extends ChangeNotifier {
     selectedServerId ??= servers.isEmpty ? null : servers.first.id;
     notifyListeners();
     await refreshAll();
-  }
-
-  ServerProfile? _findServerById(String id) {
-    for (final server in servers) {
-      if (server.id == id) {
-        return server;
-      }
-    }
-    return null;
   }
 
   @override
@@ -700,8 +659,8 @@ class _ServerSidebar extends StatelessWidget {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(18),
                               color: isSelected
-                                  ? const Color(0xFFD5F5EE)
-                                  : const Color(0xFFF7FAF8),
+                                  ? _selectionTint(context)
+                                  : _panelColor(context),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -729,16 +688,16 @@ class _ServerSidebar extends StatelessWidget {
                                       ? 'Online ${ping?.hostname ?? ''}'.trim()
                                       : 'Offline',
                                   color: error == null
-                                      ? const Color(0xFF0F766E)
-                                      : const Color(0xFFB45309),
+                                      ? Theme.of(context).colorScheme.primary
+                                      : _warningColor(context),
                                 ),
                                 if (error != null) ...[
                                   const SizedBox(height: 8),
                                   Text(
                                     error,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
-                                      color: Color(0xFF7C2D12),
+                                      color: Theme.of(context).colorScheme.error,
                                     ),
                                   ),
                                 ],
@@ -852,15 +811,14 @@ class _ManagedServicesView extends StatelessWidget {
         separatorBuilder: (context, index) => const SizedBox(height: 16),
         itemBuilder: (context, index) {
           final managed = items[index];
-          final summary = controller.managedStatuses[managed.id];
-          final refreshedAt = controller.managedRefreshedAt[managed.id];
-          final server = controller.servers.firstWhere(
-            (item) => item.id == managed.serverId,
-          );
+          final statusKey = _managedStatusKey(controller.selectedServer!.id, managed.id);
+          final summary = controller.managedStatuses[statusKey];
+          final refreshedAt = controller.managedRefreshedAt[statusKey];
+          final server = controller.selectedServer!;
           return Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFFF9FCFB),
+              color: _surfaceCardColor(context),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
@@ -898,21 +856,24 @@ class _ManagedServicesView extends StatelessWidget {
                   children: [
                     _StatusBadge(
                       label: 'active: ${summary?.activeState ?? 'unknown'}',
-                      color: _activeColor(summary?.activeState),
+                      color: _activeColor(
+                        summary?.activeState,
+                        isDark: Theme.of(context).brightness == Brightness.dark,
+                      ),
                     ),
                     _StatusBadge(
                       label: 'sub: ${summary?.subState ?? 'unknown'}',
-                      color: const Color(0xFF0F766E),
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                     _StatusBadge(
                       label: 'load: ${summary?.loadState ?? 'unknown'}',
-                      color: const Color(0xFF475569),
+                      color: Theme.of(context).colorScheme.secondary,
                     ),
                     _StatusBadge(
                       label: refreshedAt == null
                           ? 'Not refreshed'
                           : 'Refreshed ${_relativeTime(refreshedAt)}',
-                      color: const Color(0xFF334155),
+                      color: Theme.of(context).colorScheme.tertiary,
                     ),
                   ],
                 ),
@@ -971,7 +932,7 @@ class _ManagedServicesView extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: const Color(0xFF7F1D1D),
+            backgroundColor: Theme.of(context).colorScheme.error,
             content: Text(error.message),
           ),
         );
@@ -1050,14 +1011,12 @@ class _DiscoverServicesViewState extends State<_DiscoverServicesView> {
                   itemBuilder: (context, index) {
                     final service = filtered[index];
                     final isPinned = widget.controller.managedServices.any(
-                      (managed) =>
-                          managed.serverId == server.id &&
-                          managed.serviceName == service.unitName,
+                      (managed) => managed.serviceName == service.unitName,
                     );
                     return Container(
                       padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF9FCFB),
+                        color: _surfaceCardColor(context),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
@@ -1082,11 +1041,16 @@ class _DiscoverServicesViewState extends State<_DiscoverServicesView> {
                                   children: [
                                     _StatusBadge(
                                       label: service.activeState,
-                                      color: _activeColor(service.activeState),
+                                      color: _activeColor(
+                                        service.activeState,
+                                        isDark:
+                                            Theme.of(context).brightness ==
+                                                Brightness.dark,
+                                      ),
                                     ),
                                     _StatusBadge(
                                       label: service.subState,
-                                      color: const Color(0xFF0F766E),
+                                      color: Theme.of(context).colorScheme.primary,
                                     ),
                                   ],
                                 ),
@@ -1124,7 +1088,7 @@ class _SettingsView extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: const Color(0xFFF9FCFB),
+            color: _surfaceCardColor(context),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
@@ -1292,7 +1256,7 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFEE2E2),
+                  color: Theme.of(context).colorScheme.errorContainer,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Text(_error!),
@@ -1301,7 +1265,7 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
             Expanded(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF081B18),
+                  color: _logPanelBackground(context),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: _loading
@@ -1317,8 +1281,8 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
                             ),
                             child: Text(
                               '[${log.ts}] ${log.line}',
-                              style: const TextStyle(
-                                color: Color(0xFFE2F7F3),
+                              style: TextStyle(
+                                color: _logTextColor(context),
                                 fontFamily: 'Courier',
                               ),
                             ),
@@ -1410,7 +1374,7 @@ class _ServerFormDialogState extends State<_ServerFormDialog> {
                     _testResult ?? 'Ping the agent before saving if you want.',
                     style: TextStyle(
                       color: _testResult?.startsWith('Connected') ?? false
-                          ? const Color(0xFF166534)
+                          ? _successColor(context)
                           : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -1521,6 +1485,41 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
+ThemeData _buildTheme(Brightness brightness) {
+  final isDark = brightness == Brightness.dark;
+  final scheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF56B7F6),
+    brightness: brightness,
+  );
+
+  return ThemeData(
+    colorScheme: scheme,
+    brightness: brightness,
+    scaffoldBackgroundColor:
+        isDark ? const Color(0xFF08131D) : const Color(0xFFF2F8FD),
+    useMaterial3: true,
+    fontFamily: 'Georgia',
+    cardTheme: CardThemeData(
+      color: isDark ? const Color(0xFF102231) : Colors.white,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: isDark ? const Color(0xFF13293A) : const Color(0xFFF7FBFF),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: isDark ? const Color(0xFF102231) : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    ),
+  );
+}
+
 String _relativeTime(DateTime dateTime) {
   final delta = DateTime.now().difference(dateTime);
   if (delta.inSeconds < 60) {
@@ -1532,17 +1531,56 @@ String _relativeTime(DateTime dateTime) {
   return '${delta.inHours}h ago';
 }
 
-Color _activeColor(String? state) {
+String _managedStatusKey(String serverId, String managedId) {
+  return '$serverId|$managedId';
+}
+
+Color _activeColor(String? state, {bool isDark = false}) {
   switch (state) {
     case 'active':
-      return const Color(0xFF166534);
+      return isDark ? const Color(0xFF65D6B3) : const Color(0xFF167D68);
     case 'failed':
-      return const Color(0xFFB91C1C);
+      return isDark ? const Color(0xFFFF8A8A) : const Color(0xFFCC3D3D);
     case 'activating':
-      return const Color(0xFF92400E);
+      return isDark ? const Color(0xFFFFC97A) : const Color(0xFFC77B1C);
     default:
-      return const Color(0xFF475569);
+      return isDark ? const Color(0xFF9EB7C9) : const Color(0xFF5A7386);
   }
+}
+
+Color _surfaceCardColor(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark ? const Color(0xFF122736) : const Color(0xFFF7FBFF);
+}
+
+Color _panelColor(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark ? const Color(0xFF102231) : const Color(0xFFF7FBFF);
+}
+
+Color _selectionTint(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark ? const Color(0xFF17364B) : const Color(0xFFD8F0FF);
+}
+
+Color _warningColor(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark ? const Color(0xFFFFC97A) : const Color(0xFFC77B1C);
+}
+
+Color _successColor(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark ? const Color(0xFF65D6B3) : const Color(0xFF167D68);
+}
+
+Color _logPanelBackground(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark ? const Color(0xFF06101A) : const Color(0xFF0C2232);
+}
+
+Color _logTextColor(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark ? const Color(0xFFE3F2FF) : const Color(0xFFE8F6FF);
 }
 
 String? _buildTrustUrl(String baseUrl) {

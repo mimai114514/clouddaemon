@@ -34,8 +34,6 @@ class AppStorage {
   Future<void> deleteServer(String serverId) async {
     await init();
     await _serversStore.record(serverId).delete(_database!);
-    final finder = Finder(filter: Filter.equals('server_id', serverId));
-    await _managedServicesStore.delete(_database!, finder: finder);
   }
 
   Future<List<ManagedService>> loadManagedServices() async {
