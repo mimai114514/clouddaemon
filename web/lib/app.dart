@@ -186,18 +186,18 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
   ) async {
     final confirmed = await showDialog<bool>(
           context: _navigatorKey.currentContext ?? context,
-          builder: (_) => AlertDialog(
+          builder: (dialogContext) => AlertDialog(
             title: Text('Delete ${server.name}?'),
             content: const Text(
               'This removes the server profile only. Managed service favorites stay available for other servers.',
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () => Navigator.of(dialogContext).pop(false),
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
                 child: const Text('Delete'),
               ),
             ],
@@ -221,18 +221,18 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
 
     final confirmed = await showDialog<bool>(
           context: _navigatorKey.currentContext ?? context,
-          builder: (_) => AlertDialog(
+          builder: (dialogContext) => AlertDialog(
             title: const Text('Export configuration'),
             content: const Text(
               'The exported JSON will include agent tokens. Keep the file somewhere safe.',
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () => Navigator.of(dialogContext).pop(false),
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
                 child: const Text('Export'),
               ),
             ],
@@ -267,7 +267,7 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
     final preview = _controller.buildImportPreview(content);
     final approved = await showDialog<bool>(
           context: _navigatorKey.currentContext ?? context,
-          builder: (_) => AlertDialog(
+          builder: (dialogContext) => AlertDialog(
             title: const Text('Import preview'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -282,11 +282,11 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () => Navigator.of(dialogContext).pop(false),
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
                 child: const Text('Import'),
               ),
             ],
