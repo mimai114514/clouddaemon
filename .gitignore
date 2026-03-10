@@ -5,8 +5,7 @@ Thumbs.db
 .idea/
 
 # Go build outputs
-agent/clouddaemon-agent
-agent/clouddaemon-agent.exe
+agent/clouddaemon-agent*
 agent/*.test
 
 # Local env files
