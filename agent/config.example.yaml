@@ -1,0 +1,7 @@
+listen_addr: ":8443"
+tls_cert_file: "/etc/clouddaemon/tls.crt"
+tls_key_file: "/etc/clouddaemon/tls.key"
+admin_token: "replace-with-a-long-random-token"
+allowed_origins:
+  - "https://your-panel.example.com"
+log_tail_default_lines: 200

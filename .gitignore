@@ -1,0 +1,14 @@
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+
+# Go build outputs
+agent/clouddaemon-agent
+agent/clouddaemon-agent.exe
+agent/*.test
+
+# Local env files
+.env
+.env.*

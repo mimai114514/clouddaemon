@@ -1,0 +1,27 @@
+name: clouddaemon_web
+description: "Web control panel for Linux VPS systemd services."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  file_picker: ^10.3.2
+  http: ^1.5.0
+  sembast: ^3.8.5+1
+  sembast_web: ^2.4.1
+  universal_html: ^2.2.4
+  uuid: ^4.5.1
+  web_socket_channel: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
