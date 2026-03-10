@@ -4,13 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import 'agent_api.dart';
+import 'app_controller.dart';
 import 'import_export.dart';
 import 'models.dart';
-import 'storage.dart';
 import 'web_file_io.dart';
+
+export 'app_controller.dart';
 
 const _uuid = Uuid();
 const appVersion = '1.0.0+1';
+
+enum _AppPage { services, servers }
 
 class CloudDaemonApp extends StatefulWidget {
   CloudDaemonApp({super.key, AppController? controller})
@@ -24,7 +28,10 @@ class CloudDaemonApp extends StatefulWidget {
 
 class _CloudDaemonAppState extends State<CloudDaemonApp> {
   late final AppController _controller;
-  int _selectedTab = 0;
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+  _AppPage _currentPage = _AppPage.services;
 
   @override
   void initState() {
@@ -42,6 +49,8 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
+      scaffoldMessengerKey: _scaffoldMessengerKey,
       title: 'CloudDaemon',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(Brightness.light),
@@ -56,74 +65,101 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
             );
           }
 
-          return Scaffold(
-            body: SafeArea(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide = constraints.maxWidth > 1120;
-                  final sidebar = _ServerSidebar(
-                    controller: _controller,
-                    onAdd: () => _showServerForm(context),
-                    onEdit: _controller.selectedServer == null
-                        ? null
-                        : () => _showServerForm(
-                              context,
-                              existing: _controller.selectedServer,
-                            ),
-                    onDelete: _controller.selectedServer == null
-                        ? null
-                        : () => _confirmDeleteServer(context),
-                    onTrustSelfSigned: _controller.selectedServer == null
-                        ? null
-                        : () => _trustSelfSignedCertificate(
-                              context,
-                              _controller.selectedServer!,
-                            ),
-                    onImport: () => _importConfig(context),
-                    onExport: _controller.servers.isEmpty
-                        ? null
-                        : () => _exportConfig(context),
-                  );
-
-                  final content = _DashboardContent(
-                    controller: _controller,
-                    selectedTab: _selectedTab,
-                    onTabChanged: (index) => setState(() => _selectedTab = index),
-                    onShowLogs: (server, serviceName) {
-                      showDialog<void>(
-                        context: context,
-                        builder: (_) => ServiceLogsDialog(
-                          server: server,
-                          serviceName: serviceName,
-                        ),
-                      );
-                    },
-                  );
-
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 1120;
+              final navigation = _AppNavigationDrawer(
+                currentPage: _currentPage,
+                onSelect: (page) {
+                  setState(() => _currentPage = page);
                   if (!wide) {
-                    return Column(
-                      children: [
-                        Expanded(flex: 4, child: sidebar),
-                        const SizedBox(height: 16),
-                        Expanded(flex: 7, child: content),
-                      ],
-                    );
+                    Navigator.of(context).maybePop();
                   }
-
-                  return Row(
-                    children: [
-                      SizedBox(width: 330, child: sidebar),
-                      const SizedBox(width: 24),
-                      Expanded(child: content),
-                    ],
-                  );
                 },
-              ),
-            ),
+              );
+
+              return Scaffold(
+                appBar: wide
+                    ? null
+                    : AppBar(
+                        title: Text(_pageLabel(_currentPage)),
+                      ),
+                drawer: wide ? null : Drawer(child: navigation),
+                body: SafeArea(
+                  child: Padding(
+                    padding: EdgeInsets.all(wide ? 24 : 16),
+                    child: wide
+                        ? Row(
+                            children: [
+                              SizedBox(width: 280, child: navigation),
+                              const SizedBox(width: 24),
+                              Expanded(child: _buildPageContent()),
+                            ],
+                          )
+                        : _buildPageContent(),
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
     );
+  }
+
+  Widget _buildPageContent() {
+    return switch (_currentPage) {
+      _AppPage.services => _ServicesPage(
+          controller: _controller,
+          onAddManagedService: () => _showManagedServicePicker(context),
+          onShowLogs: _showLogs,
+        ),
+      _AppPage.servers => _ServersPage(
+          controller: _controller,
+          onAddServer: () => _showServerForm(context),
+          onEditServer: (server) => _showServerForm(context, existing: server),
+          onDeleteServer: (server) => _confirmDeleteServer(context, server),
+          onTrustServer: (server) => _trustSelfSignedCertificate(context, server),
+          onImport: () => _importConfig(context),
+          onExport: () => _exportConfig(context),
+          onAddManagedServiceForServer: (serverId) => _showManagedServicePicker(
+            context,
+            initialServerId: serverId,
+            fixedServer: true,
+          ),
+          onShowLogs: _showLogs,
+        ),
+    };
+  }
+
+  void _showLogs(ServerProfile server, String serviceName) {
+    showDialog<void>(
+      context: _navigatorKey.currentContext ?? context,
+      builder: (_) => ServiceLogsDialog(
+        server: server,
+        serviceName: serviceName,
+      ),
+    );
+  }
+
+  Future<void> _showManagedServicePicker(
+    BuildContext context, {
+    String? initialServerId,
+    bool fixedServer = false,
+  }) async {
+    final addedService = await showDialog<String>(
+      context: _navigatorKey.currentContext ?? context,
+      builder: (_) => _ManagedServicePickerDialog(
+        controller: _controller,
+        initialServerId: initialServerId,
+        fixedServer: fixedServer,
+      ),
+    );
+    if (!context.mounted || addedService == null) {
+      return;
+    }
+
+    _showMessage(context, '$addedService added to managed services.');
   }
 
   Future<void> _showServerForm(
@@ -131,25 +167,25 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
     ServerProfile? existing,
   }) async {
     final result = await showDialog<ServerProfile>(
-      context: context,
+      context: _navigatorKey.currentContext ?? context,
       builder: (_) => _ServerFormDialog(existing: existing),
     );
     if (result == null) {
       return;
     }
+
     await _controller.saveServer(result);
     if (context.mounted) {
       _showMessage(context, 'Server saved.');
     }
   }
 
-  Future<void> _confirmDeleteServer(BuildContext context) async {
-    final server = _controller.selectedServer;
-    if (server == null) {
-      return;
-    }
+  Future<void> _confirmDeleteServer(
+    BuildContext context,
+    ServerProfile server,
+  ) async {
     final confirmed = await showDialog<bool>(
-          context: context,
+          context: _navigatorKey.currentContext ?? context,
           builder: (_) => AlertDialog(
             title: Text('Delete ${server.name}?'),
             content: const Text(
@@ -171,15 +207,20 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
     if (!confirmed) {
       return;
     }
-    await _controller.deleteSelectedServer();
+
+    await _controller.deleteServer(server.id);
     if (context.mounted) {
       _showMessage(context, 'Server deleted.');
     }
   }
 
   Future<void> _exportConfig(BuildContext context) async {
+    if (_controller.servers.isEmpty) {
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
-          context: context,
+          context: _navigatorKey.currentContext ?? context,
           builder: (_) => AlertDialog(
             title: const Text('Export configuration'),
             content: const Text(
@@ -219,19 +260,13 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
 
   Future<void> _importConfig(BuildContext context) async {
     final content = await pickTextFile();
-    if (!context.mounted) {
-      return;
-    }
-    if (content == null || content.trim().isEmpty) {
-      return;
-    }
-    if (!context.mounted) {
+    if (!context.mounted || content == null || content.trim().isEmpty) {
       return;
     }
 
     final preview = _controller.buildImportPreview(content);
     final approved = await showDialog<bool>(
-          context: context,
+          context: _navigatorKey.currentContext ?? context,
           builder: (_) => AlertDialog(
             title: const Text('Import preview'),
             content: Column(
@@ -271,16 +306,6 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
     }
   }
 
-  void _showMessage(BuildContext context, String message, {bool isError = false}) {
-    final colorScheme = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: isError ? colorScheme.error : colorScheme.primary,
-        content: Text(message),
-      ),
-    );
-  }
-
   Future<void> _trustSelfSignedCertificate(
     BuildContext context,
     ServerProfile server,
@@ -303,656 +328,819 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
       );
     }
   }
-}
 
-class AppController extends ChangeNotifier {
-  AppController({AppStorage? storage}) : _storage = storage ?? AppStorage();
-
-  final AppStorage _storage;
-
-  bool initializing = true;
-  bool refreshingCatalog = false;
-  bool refreshingManaged = false;
-  List<ServerProfile> servers = <ServerProfile>[];
-  List<ManagedService> managedServices = <ManagedService>[];
-  Map<String, PingInfo> serverPings = <String, PingInfo>{};
-  Map<String, String> serverErrors = <String, String>{};
-  Map<String, List<ServiceSummary>> discoveredServicesByServer = <String, List<ServiceSummary>>{};
-  Map<String, ServiceSummary> managedStatuses = <String, ServiceSummary>{};
-  Map<String, DateTime> managedRefreshedAt = <String, DateTime>{};
-  String? selectedServerId;
-  Timer? _refreshTimer;
-
-  ServerProfile? get selectedServer {
-    for (final server in servers) {
-      if (server.id == selectedServerId) {
-        return server;
-      }
-    }
-    return servers.isEmpty ? null : servers.first;
-  }
-
-  List<ServiceSummary> get selectedServerServices {
-    final server = selectedServer;
-    if (server == null) {
-      return const <ServiceSummary>[];
-    }
-    return discoveredServicesByServer[server.id] ?? const <ServiceSummary>[];
-  }
-
-  List<ManagedService> managedForSelectedServer() {
-    return managedServices;
-  }
-
-  Future<void> initialize() async {
-    await _storage.init();
-    servers = await _storage.loadServers();
-    managedServices = await _storage.loadManagedServices();
-    selectedServerId = servers.isEmpty ? null : servers.first.id;
-    initializing = false;
-    notifyListeners();
-    await refreshAll();
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => unawaited(refreshManagedStatuses()),
-    );
-  }
-
-  Future<void> refreshAll() async {
-    await Future.wait(<Future<void>>[
-      refreshServerPings(),
-      refreshManagedStatuses(),
-      refreshDiscoveredServices(),
-    ]);
-  }
-
-  Future<void> saveServer(ServerProfile server) async {
-    await _storage.saveServer(server);
-    final existingIndex = servers.indexWhere((item) => item.id == server.id);
-    if (existingIndex == -1) {
-      servers = [...servers, server];
-    } else {
-      servers = [...servers]..[existingIndex] = server;
-    }
-    selectedServerId = server.id;
-    notifyListeners();
-    await refreshServerPing(server);
-    await refreshDiscoveredServices();
-    await refreshManagedStatuses();
-  }
-
-  Future<void> deleteSelectedServer() async {
-    final server = selectedServer;
-    if (server == null) {
-      return;
-    }
-    await _storage.deleteServer(server.id);
-    servers = servers.where((item) => item.id != server.id).toList();
-    discoveredServicesByServer.remove(server.id);
-    serverPings.remove(server.id);
-    serverErrors.remove(server.id);
-    selectedServerId = servers.isEmpty ? null : servers.first.id;
-    notifyListeners();
-    await refreshManagedStatuses();
-  }
-
-  Future<void> selectServer(String serverId) async {
-    selectedServerId = serverId;
-    notifyListeners();
-    await Future.wait(<Future<void>>[
-      refreshServerPing(selectedServer),
-      refreshDiscoveredServices(),
-      refreshManagedStatuses(),
-    ]);
-  }
-
-  Future<void> refreshServerPings() async {
-    await Future.wait(servers.map(refreshServerPing));
-    notifyListeners();
-  }
-
-  Future<void> refreshServerPing(ServerProfile? server) async {
-    if (server == null) {
-      return;
-    }
-    try {
-      final ping = await AgentApiClient(server).ping();
-      serverPings = {...serverPings, server.id: ping};
-      serverErrors.remove(server.id);
-    } on ApiError catch (error) {
-      serverErrors = {...serverErrors, server.id: error.message};
-    }
-    notifyListeners();
-  }
-
-  Future<void> refreshDiscoveredServices() async {
-    final server = selectedServer;
-    if (server == null) {
-      return;
-    }
-    refreshingCatalog = true;
-    notifyListeners();
-    try {
-      final services = await AgentApiClient(server).listServices();
-      services.sort((a, b) => a.unitName.compareTo(b.unitName));
-      discoveredServicesByServer = {
-        ...discoveredServicesByServer,
-        server.id: services,
-      };
-      serverErrors.remove(server.id);
-    } on ApiError catch (error) {
-      serverErrors = {...serverErrors, server.id: error.message};
-    } finally {
-      refreshingCatalog = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> addManagedService(ServiceSummary service) async {
-    final exists = managedServices.any(
-      (managed) => managed.serviceName == service.unitName,
-    );
-    if (exists) {
-      return;
-    }
-
-    final managedService = ManagedService(
-      id: _uuid.v4(),
-      serviceName: service.unitName,
-      pinnedAt: DateTime.now().toUtc().toIso8601String(),
-    );
-    await _storage.saveManagedService(managedService);
-    managedServices = [...managedServices, managedService];
-    notifyListeners();
-    await refreshManagedStatuses();
-  }
-
-  Future<void> removeManagedService(String managedId) async {
-    await _storage.deleteManagedService(managedId);
-    managedServices = managedServices.where((item) => item.id != managedId).toList();
-    managedStatuses.remove(managedId);
-    managedRefreshedAt.remove(managedId);
-    notifyListeners();
-  }
-
-  Future<void> refreshManagedStatuses() async {
-    final server = selectedServer;
-    if (managedServices.isEmpty || server == null) {
-      managedStatuses = {};
-      managedRefreshedAt = {};
-      notifyListeners();
-      return;
-    }
-    refreshingManaged = true;
-    notifyListeners();
-
-    final nextStatuses = <String, ServiceSummary>{};
-    final nextRefreshedAt = <String, DateTime>{};
-
-    await Future.wait(
-      managedServices.map((managed) async {
-        try {
-          final summary =
-              await AgentApiClient(server).getService(managed.serviceName);
-          final key = _managedStatusKey(server.id, managed.id);
-          nextStatuses[key] = summary;
-          nextRefreshedAt[key] = DateTime.now();
-        } on ApiError catch (error) {
-          serverErrors = {...serverErrors, server.id: error.message};
-        }
-      }),
-    );
-
-    managedStatuses = nextStatuses;
-    managedRefreshedAt = nextRefreshedAt;
-    refreshingManaged = false;
-    notifyListeners();
-  }
-
-  Future<void> performAction(ManagedService managedService, String action) async {
-    final server = selectedServer;
-    if (server == null) {
-      throw ApiError('Server not found for ${managedService.serviceName}.');
-    }
-    final summary =
-        await AgentApiClient(server).performAction(managedService.serviceName, action);
-    final key = _managedStatusKey(server.id, managedService.id);
-    managedStatuses = {...managedStatuses, key: summary};
-    managedRefreshedAt = {
-      ...managedRefreshedAt,
-      key: DateTime.now(),
-    };
-    notifyListeners();
-  }
-
-  ImportPreview buildImportPreview(String content) {
-    final bundle = decodeExportBundle(content);
-    return previewImport(
-      bundle: bundle,
-      existingServers: servers,
-      existingManagedServices: managedServices,
-    );
-  }
-
-  Future<void> applyImportPreview(ImportPreview preview) async {
-    for (final server in preview.serversToInsert) {
-      await _storage.saveServer(server);
-    }
-    for (final managedService in preview.managedServicesToInsert) {
-      await _storage.saveManagedService(managedService);
-    }
-    servers = await _storage.loadServers();
-    managedServices = await _storage.loadManagedServices();
-    selectedServerId ??= servers.isEmpty ? null : servers.first.id;
-    notifyListeners();
-    await refreshAll();
-  }
-
-  @override
-  void dispose() {
-    _refreshTimer?.cancel();
-    super.dispose();
-  }
-}
-
-class _ServerSidebar extends StatelessWidget {
-  const _ServerSidebar({
-    required this.controller,
-    required this.onAdd,
-    required this.onEdit,
-    required this.onDelete,
-    required this.onTrustSelfSigned,
-    required this.onImport,
-    required this.onExport,
-  });
-
-  final AppController controller;
-  final VoidCallback onAdd;
-  final VoidCallback? onEdit;
-  final VoidCallback? onDelete;
-  final VoidCallback? onTrustSelfSigned;
-  final VoidCallback onImport;
-  final VoidCallback? onExport;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 6),
-            const Text(
-              'CloudDaemon',
-              style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Direct browser-to-agent control for systemd services.',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.icon(
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add VPS'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: onImport,
-                  icon: const Icon(Icons.upload_file),
-                  label: const Text('Import'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: onExport,
-                  icon: const Icon(Icons.download),
-                  label: const Text('Export'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                TextButton.icon(
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Edit'),
-                ),
-                TextButton.icon(
-                  onPressed: onTrustSelfSigned,
-                  icon: const Icon(Icons.verified_user_outlined),
-                  label: const Text('Trust Cert'),
-                ),
-                TextButton.icon(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Delete'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: controller.servers.isEmpty
-                  ? const Center(
-                      child: Text('No servers yet. Add one to begin.'),
-                    )
-                  : ListView.separated(
-                      itemCount: controller.servers.length,
-                      separatorBuilder: (context, index) =>
-                          const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final server = controller.servers[index];
-                        final isSelected = server.id == controller.selectedServerId;
-                        final ping = controller.serverPings[server.id];
-                        final error = controller.serverErrors[server.id];
-                        return InkWell(
-                          borderRadius: BorderRadius.circular(18),
-                          onTap: () => unawaited(controller.selectServer(server.id)),
-                          child: Ink(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(18),
-                              color: isSelected
-                                  ? _selectionTint(context)
-                                  : _panelColor(context),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  server.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  server.baseUrl,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color:
-                                        Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                _StatusBadge(
-                                  label: error == null
-                                      ? 'Online ${ping?.hostname ?? ''}'.trim()
-                                      : 'Offline',
-                                  color: error == null
-                                      ? Theme.of(context).colorScheme.primary
-                                      : _warningColor(context),
-                                ),
-                                if (error != null) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    error,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Theme.of(context).colorScheme.error,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Web app $appVersion',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+  void _showMessage(
+    BuildContext context,
+    String message, {
+    bool isError = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    _scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        backgroundColor: isError ? colorScheme.error : colorScheme.primary,
+        content: Text(message),
       ),
     );
   }
 }
 
-class _DashboardContent extends StatelessWidget {
-  const _DashboardContent({
+class _AppNavigationDrawer extends StatelessWidget {
+  const _AppNavigationDrawer({
+    required this.currentPage,
+    required this.onSelect,
+  });
+
+  final _AppPage currentPage;
+  final ValueChanged<_AppPage> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: NavigationDrawer(
+        selectedIndex: currentPage.index,
+        onDestinationSelected: (index) => onSelect(_AppPage.values[index]),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'CloudDaemon',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Service and server operations from one browser console.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const NavigationDrawerDestination(
+            icon: Icon(Icons.hub_outlined),
+            selectedIcon: Icon(Icons.hub),
+            label: Text('Services'),
+          ),
+          const NavigationDrawerDestination(
+            icon: Icon(Icons.dns_outlined),
+            selectedIcon: Icon(Icons.dns),
+            label: Text('Servers'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ServicesPage extends StatelessWidget {
+  const _ServicesPage({
     required this.controller,
-    required this.selectedTab,
-    required this.onTabChanged,
+    required this.onAddManagedService,
     required this.onShowLogs,
   });
 
   final AppController controller;
-  final int selectedTab;
-  final ValueChanged<int> onTabChanged;
+  final VoidCallback onAddManagedService;
   final void Function(ServerProfile server, String serviceName) onShowLogs;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = controller.buildManagedServiceGroups();
+
+    return _ContentShell(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _PageHeader(
+            title: 'Services',
+            subtitle:
+                'Managed services grouped by unit, with live status across the servers that currently expose them.',
+            actions: [
+              FilledButton.icon(
+                key: const ValueKey('open-global-add-dialog'),
+                onPressed: controller.servers.isEmpty ? null : onAddManagedService,
+                icon: const Icon(Icons.add),
+                label: const Text('Add managed service'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: controller.refreshingManaged && controller.refreshingCatalog
+                    ? null
+                    : () => unawaited(controller.refreshAll()),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh all'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (controller.refreshingManaged || controller.refreshingCatalog) ...[
+            const LinearProgressIndicator(),
+            const SizedBox(height: 16),
+          ],
+          if (controller.servers.isEmpty)
+            const Expanded(
+              child: _EmptyState(
+                title: 'No servers yet',
+                message: 'Switch to the Servers page to add your first VPS.',
+              ),
+            )
+          else if (groups.isEmpty)
+            const Expanded(
+              child: _EmptyState(
+                title: 'No managed services yet',
+                message:
+                    'Use the + button to choose a server, search its services, and add a managed unit.',
+              ),
+            )
+          else
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: controller.refreshAll,
+                child: ListView.separated(
+                  itemCount: groups.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 16),
+                  itemBuilder: (context, index) {
+                    final group = groups[index];
+                    return _ServiceGroupCard(
+                      group: group,
+                      controller: controller,
+                      onShowLogs: onShowLogs,
+                    );
+                  },
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ServersPage extends StatelessWidget {
+  const _ServersPage({
+    required this.controller,
+    required this.onAddServer,
+    required this.onEditServer,
+    required this.onDeleteServer,
+    required this.onTrustServer,
+    required this.onImport,
+    required this.onExport,
+    required this.onAddManagedServiceForServer,
+    required this.onShowLogs,
+  });
+
+  final AppController controller;
+  final VoidCallback onAddServer;
+  final ValueChanged<ServerProfile> onEditServer;
+  final ValueChanged<ServerProfile> onDeleteServer;
+  final ValueChanged<ServerProfile> onTrustServer;
+  final VoidCallback onImport;
+  final VoidCallback onExport;
+  final ValueChanged<String> onAddManagedServiceForServer;
+  final void Function(ServerProfile server, String serviceName) onShowLogs;
+
+  @override
+  Widget build(BuildContext context) {
+    final sections = controller.buildServerSections();
+
+    return _ContentShell(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _PageHeader(
+            title: 'Servers',
+            subtitle:
+                'Fleet overview first, then per-server managed services and maintenance actions.',
+            actions: [
+              FilledButton.icon(
+                onPressed: onAddServer,
+                icon: const Icon(Icons.add),
+                label: const Text('Add server'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onImport,
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Import'),
+              ),
+              OutlinedButton.icon(
+                onPressed: controller.servers.isEmpty ? null : onExport,
+                icon: const Icon(Icons.download),
+                label: const Text('Export'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: controller.refreshingManaged && controller.refreshingCatalog
+                    ? null
+                    : () => unawaited(controller.refreshAll()),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh all'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _SummaryChip(
+                label: 'Servers configured',
+                value: '${controller.servers.length}',
+              ),
+              _SummaryChip(
+                label: 'Managed services',
+                value: '${controller.managedServices.length}',
+              ),
+              const _SummaryChip(
+                label: 'Web build',
+                value: appVersion,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (controller.refreshingManaged || controller.refreshingCatalog) ...[
+            const LinearProgressIndicator(),
+            const SizedBox(height: 16),
+          ],
+          if (sections.isEmpty)
+            const Expanded(
+              child: _EmptyState(
+                title: 'No servers configured',
+                message: 'Add a server to start discovering and managing services.',
+              ),
+            )
+          else
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: controller.refreshAll,
+                child: ListView.separated(
+                  itemCount: sections.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 16),
+                  itemBuilder: (context, index) {
+                    final section = sections[index];
+                    return _ServerSectionCard(
+                      section: section,
+                      controller: controller,
+                      onEditServer: onEditServer,
+                      onDeleteServer: onDeleteServer,
+                      onTrustServer: onTrustServer,
+                      onAddManagedService: onAddManagedServiceForServer,
+                      onShowLogs: onShowLogs,
+                    );
+                  },
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContentShell extends StatelessWidget {
+  const _ContentShell({required this.child});
+
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              controller.selectedServer?.name ?? 'Choose a server',
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              controller.selectedServer?.baseUrl ??
-                  'Add a VPS from the left panel to get started.',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 20),
-            SegmentedButton<int>(
-              segments: const [
-                ButtonSegment<int>(value: 0, label: Text('Managed')),
-                ButtonSegment<int>(value: 1, label: Text('Discover')),
-                ButtonSegment<int>(value: 2, label: Text('Settings')),
-              ],
-              selected: {selectedTab},
-              onSelectionChanged: (selection) => onTabChanged(selection.first),
-            ),
-            const SizedBox(height: 24),
-            Expanded(
-              child: switch (selectedTab) {
-                0 => _ManagedServicesView(
-                    controller: controller,
-                    onShowLogs: onShowLogs,
-                  ),
-                1 => _DiscoverServicesView(controller: controller),
-                _ => _SettingsView(controller: controller),
-              },
-            ),
-          ],
-        ),
+        child: child,
       ),
     );
   }
 }
 
-class _ManagedServicesView extends StatelessWidget {
-  const _ManagedServicesView({
+class _PageHeader extends StatelessWidget {
+  const _PageHeader({
+    required this.title,
+    required this.subtitle,
+    required this.actions,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          subtitle,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(spacing: 12, runSpacing: 12, children: actions),
+      ],
+    );
+  }
+}
+
+class _SummaryChip extends StatelessWidget {
+  const _SummaryChip({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 180,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surfaceCardColor(context),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ServiceGroupCard extends StatelessWidget {
+  const _ServiceGroupCard({
+    required this.group,
     required this.controller,
     required this.onShowLogs,
   });
 
+  final ManagedServiceGroup group;
   final AppController controller;
   final void Function(ServerProfile server, String serviceName) onShowLogs;
 
   @override
   Widget build(BuildContext context) {
-    final items = controller.managedForSelectedServer();
-    if (controller.selectedServer == null) {
-      return const Center(child: Text('Select a server to view managed services.'));
-    }
-    if (items.isEmpty) {
-      return const Center(
-        child: Text('No managed services yet. Discover services and pin them here.'),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: controller.refreshManagedStatuses,
-      child: ListView.separated(
-        itemCount: items.length,
-        separatorBuilder: (context, index) => const SizedBox(height: 16),
-        itemBuilder: (context, index) {
-          final managed = items[index];
-          final statusKey = _managedStatusKey(controller.selectedServer!.id, managed.id);
-          final summary = controller.managedStatuses[statusKey];
-          final refreshedAt = controller.managedRefreshedAt[statusKey];
-          final server = controller.selectedServer!;
-          return Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: _surfaceCardColor(context),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      key: ValueKey('service-group-${group.managedService.serviceName}'),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _surfaceCardColor(context),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.managedService.serviceName,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${group.entries.length} server${group.entries.length == 1 ? '' : 's'} currently expose this service.',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove managed service',
+                onPressed: () =>
+                    unawaited(controller.removeManagedService(group.managedService.id)),
+                icon: const Icon(Icons.push_pin_outlined),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (group.entries.isEmpty)
+            Text(
+              'No known servers currently expose this unit.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            Column(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            managed.serviceName,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(summary?.description ?? 'No service metadata yet.'),
-                        ],
-                      ),
+                for (var i = 0; i < group.entries.length; i++) ...[
+                  _ManagedServiceRow(
+                    key: ValueKey(
+                      'service-row-${group.managedService.serviceName}-${group.entries[i].server.id}',
                     ),
-                    IconButton(
-                      onPressed: () => unawaited(controller.removeManagedService(managed.id)),
-                      icon: const Icon(Icons.push_pin_outlined),
-                      tooltip: 'Remove from managed list',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _StatusBadge(
-                      label: 'active: ${summary?.activeState ?? 'unknown'}',
-                      color: _activeColor(
-                        summary?.activeState,
-                        isDark: Theme.of(context).brightness == Brightness.dark,
-                      ),
-                    ),
-                    _StatusBadge(
-                      label: 'sub: ${summary?.subState ?? 'unknown'}',
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    _StatusBadge(
-                      label: 'load: ${summary?.loadState ?? 'unknown'}',
-                      color: Theme.of(context).colorScheme.secondary,
-                    ),
-                    _StatusBadge(
-                      label: refreshedAt == null
-                          ? 'Not refreshed'
-                          : 'Refreshed ${_relativeTime(refreshedAt)}',
-                      color: Theme.of(context).colorScheme.tertiary,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    FilledButton(
-                      onPressed: summary == null || !summary.canStart
-                          ? null
-                          : () => _runAction(context, controller, managed, 'start'),
-                      child: const Text('Start'),
-                    ),
-                    FilledButton.tonal(
-                      onPressed: summary == null || !summary.canRestart
-                          ? null
-                          : () => _runAction(context, controller, managed, 'restart'),
-                      child: const Text('Restart'),
-                    ),
-                    OutlinedButton(
-                      onPressed: summary == null || !summary.canStop
-                          ? null
-                          : () => _runAction(context, controller, managed, 'stop'),
-                      child: const Text('Stop'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => onShowLogs(server, managed.serviceName),
-                      icon: const Icon(Icons.subject),
-                      label: const Text('Logs'),
-                    ),
-                  ],
-                ),
+                    controller: controller,
+                    placement: group.entries[i],
+                    onShowLogs: onShowLogs,
+                    showServerLabel: true,
+                  ),
+                  if (i < group.entries.length - 1) const SizedBox(height: 12),
+                ],
               ],
             ),
-          );
-        },
+        ],
+      ),
+    );
+  }
+}
+
+class _ServerSectionCard extends StatelessWidget {
+  const _ServerSectionCard({
+    required this.section,
+    required this.controller,
+    required this.onEditServer,
+    required this.onDeleteServer,
+    required this.onTrustServer,
+    required this.onAddManagedService,
+    required this.onShowLogs,
+  });
+
+  final ServerManagedServicesSection section;
+  final AppController controller;
+  final ValueChanged<ServerProfile> onEditServer;
+  final ValueChanged<ServerProfile> onDeleteServer;
+  final ValueChanged<ServerProfile> onTrustServer;
+  final ValueChanged<String> onAddManagedService;
+  final void Function(ServerProfile server, String serviceName) onShowLogs;
+
+  @override
+  Widget build(BuildContext context) {
+    final server = section.server;
+    final discoveredCount = controller.servicesForServer(server.id).length;
+
+    return Container(
+      key: ValueKey('server-card-${server.id}'),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _surfaceCardColor(context),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      server.name,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(server.baseUrl),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _StatusBadge(
+                          label: section.error == null
+                              ? 'Online ${section.ping?.hostname ?? ''}'.trim()
+                              : 'Offline',
+                          color: section.error == null
+                              ? Theme.of(context).colorScheme.primary
+                              : _warningColor(context),
+                        ),
+                        if (section.ping != null)
+                          _StatusBadge(
+                            label: 'Version ${section.ping!.version}',
+                            color: Theme.of(context).colorScheme.secondary,
+                          ),
+                        _StatusBadge(
+                          label: 'Managed ${section.entries.length}',
+                          color: Theme.of(context).colorScheme.tertiary,
+                        ),
+                        _StatusBadge(
+                          label: 'Catalog $discoveredCount',
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ],
+                    ),
+                    if (section.error != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        section.error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    key: ValueKey('open-add-dialog-${server.id}'),
+                    onPressed: () => onAddManagedService(server.id),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add service'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => onEditServer(server),
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Edit'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => onTrustServer(server),
+                    icon: const Icon(Icons.verified_user_outlined),
+                    label: const Text('Trust cert'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => onDeleteServer(server),
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Delete'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Managed services',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          if (section.entries.isEmpty)
+            Text(
+              'No managed services currently exist on this server.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            Column(
+              children: [
+                for (var i = 0; i < section.entries.length; i++) ...[
+                  _ManagedServiceRow(
+                    key: ValueKey(
+                      'server-row-${server.id}-${section.entries[i].managedService.serviceName}',
+                    ),
+                    controller: controller,
+                    placement: section.entries[i],
+                    onShowLogs: onShowLogs,
+                    showServerLabel: false,
+                  ),
+                  if (i < section.entries.length - 1) const SizedBox(height: 12),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManagedServiceRow extends StatelessWidget {
+  const _ManagedServiceRow({
+    super.key,
+    required this.controller,
+    required this.placement,
+    required this.onShowLogs,
+    required this.showServerLabel,
+  });
+
+  final AppController controller;
+  final ManagedServicePlacement placement;
+  final void Function(ServerProfile server, String serviceName) onShowLogs;
+  final bool showServerLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = placement.summary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _panelColor(context),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      showServerLabel
+                          ? placement.server.name
+                          : placement.managedService.serviceName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      showServerLabel
+                          ? placement.server.baseUrl
+                          : summary?.description.isNotEmpty == true
+                              ? summary!.description
+                              : 'No service metadata yet.',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (showServerLabel) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        placement.managedService.serviceName,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (placement.error != null)
+                _StatusBadge(
+                  label: 'Server issue',
+                  color: _warningColor(context),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _StatusBadge(
+                label: 'active: ${summary?.activeState ?? 'unknown'}',
+                color: _activeColor(summary?.activeState, isDark: isDark),
+              ),
+              _StatusBadge(
+                label: 'sub: ${summary?.subState ?? 'unknown'}',
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              _StatusBadge(
+                label: 'load: ${summary?.loadState ?? 'unknown'}',
+                color: Theme.of(context).colorScheme.secondary,
+              ),
+              _StatusBadge(
+                label: placement.refreshedAt == null
+                    ? 'Not refreshed'
+                    : 'Refreshed ${_relativeTime(placement.refreshedAt!)}',
+                color: Theme.of(context).colorScheme.tertiary,
+              ),
+            ],
+          ),
+          if (placement.error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              placement.error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton(
+                onPressed: summary == null || !summary.canStart
+                    ? null
+                    : () => _runAction(context, 'start'),
+                child: const Text('Start'),
+              ),
+              FilledButton.tonal(
+                onPressed: summary == null || !summary.canRestart
+                    ? null
+                    : () => _runAction(context, 'restart'),
+                child: const Text('Restart'),
+              ),
+              OutlinedButton(
+                onPressed: summary == null || !summary.canStop
+                    ? null
+                    : () => _runAction(context, 'stop'),
+                child: const Text('Stop'),
+              ),
+              OutlinedButton.icon(
+                onPressed: summary == null
+                    ? null
+                    : () => onShowLogs(
+                          placement.server,
+                          placement.managedService.serviceName,
+                        ),
+                icon: const Icon(Icons.subject),
+                label: const Text('Logs'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Future<void> _runAction(
-    BuildContext context,
-    AppController controller,
-    ManagedService managed,
-    String action,
-  ) async {
+  Future<void> _runAction(BuildContext context, String action) async {
     try {
-      await controller.performAction(managed, action);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${managed.serviceName}: $action sent.')),
-        );
+      await controller.performAction(
+        placement.server,
+        placement.managedService,
+        action,
+      );
+      if (!context.mounted) {
+        return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${placement.managedService.serviceName}: $action sent.'),
+        ),
+      );
     } on ApiError catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Theme.of(context).colorScheme.error,
-            content: Text(error.message),
-          ),
-        );
+      if (!context.mounted) {
+        return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Theme.of(context).colorScheme.error,
+          content: Text(error.message),
+        ),
+      );
     }
   }
 }
 
-class _DiscoverServicesView extends StatefulWidget {
-  const _DiscoverServicesView({required this.controller});
+class _ManagedServicePickerDialog extends StatefulWidget {
+  const _ManagedServicePickerDialog({
+    required this.controller,
+    this.initialServerId,
+    required this.fixedServer,
+  });
 
   final AppController controller;
+  final String? initialServerId;
+  final bool fixedServer;
 
   @override
-  State<_DiscoverServicesView> createState() => _DiscoverServicesViewState();
+  State<_ManagedServicePickerDialog> createState() =>
+      _ManagedServicePickerDialogState();
 }
 
-class _DiscoverServicesViewState extends State<_DiscoverServicesView> {
+class _ManagedServicePickerDialogState extends State<_ManagedServicePickerDialog> {
   final TextEditingController _searchController = TextEditingController();
+
+  String? _selectedServerId;
+  String? _selectedServiceName;
   String _query = '';
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedServerId = widget.initialServerId ??
+        widget.controller.selectedServerId ??
+        (widget.controller.servers.isEmpty ? null : widget.controller.servers.first.id);
+    if (_selectedServerId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _selectedServerId != null) {
+          unawaited(_loadCatalog(_selectedServerId!, forceRefresh: false));
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -962,154 +1150,309 @@ class _DiscoverServicesViewState extends State<_DiscoverServicesView> {
 
   @override
   Widget build(BuildContext context) {
-    final server = widget.controller.selectedServer;
-    if (server == null) {
-      return const Center(child: Text('Select a server to discover services.'));
-    }
+    return AlertDialog(
+      title: const Text('Add managed service'),
+      content: SizedBox(
+        width: 760,
+        height: 520,
+        child: AnimatedBuilder(
+          animation: widget.controller,
+          builder: (context, _) {
+            final selectedServer = _selectedServerId == null
+                ? null
+                : widget.controller.serverById(_selectedServerId!);
+            final services = selectedServer == null
+                ? const <ServiceSummary>[]
+                : widget.controller.servicesForServer(selectedServer.id);
+            final filtered = services.where((service) {
+              if (_query.isEmpty) {
+                return true;
+              }
 
-    final filtered = widget.controller.selectedServerServices.where((service) {
-      if (_query.isEmpty) {
-        return true;
-      }
-      final lower = _query.toLowerCase();
-      return service.unitName.toLowerCase().contains(lower) ||
-          service.description.toLowerCase().contains(lower);
-    }).toList();
+              final lower = _query.toLowerCase();
+              return service.unitName.toLowerCase().contains(lower) ||
+                  service.description.toLowerCase().contains(lower);
+            }).toList();
 
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _searchController,
-                decoration: const InputDecoration(
-                  hintText: 'Search services by name or description',
-                  prefixIcon: Icon(Icons.search),
-                ),
-                onChanged: (value) => setState(() => _query = value.trim()),
-              ),
-            ),
-            const SizedBox(width: 12),
-            FilledButton.icon(
-              onPressed: widget.controller.refreshingCatalog
-                  ? null
-                  : () => unawaited(widget.controller.refreshDiscoveredServices()),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: filtered.isEmpty
-              ? const Center(child: Text('No services match the current filter.'))
-              : ListView.separated(
-                  itemCount: filtered.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final service = filtered[index];
-                    final isPinned = widget.controller.managedServices.any(
-                      (managed) => managed.serviceName == service.unitName,
-                    );
-                    return Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: _surfaceCardColor(context),
-                        borderRadius: BorderRadius.circular(20),
+            final selectedService = _selectedFrom(filtered, _selectedServiceName);
+            final alreadyAdded = selectedService != null &&
+                widget.controller.isManagedServiceTracked(selectedService.unitName);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!widget.fixedServer) ...[
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedServer?.id,
+                    decoration: const InputDecoration(labelText: 'Server'),
+                    items: [
+                      for (final server in widget.controller.servers)
+                        DropdownMenuItem<String>(
+                          value: server.id,
+                          child: Text(server.name),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) {
+                        return;
+                      }
+                      setState(() {
+                        _selectedServerId = value;
+                        _selectedServiceName = null;
+                      });
+                      unawaited(_loadCatalog(value, forceRefresh: false));
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: const InputDecoration(
+                          hintText: 'Search services by name or description',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (value) =>
+                            setState(() => _query = value.trim()),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  service.unitName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(service.description),
-                                const SizedBox(height: 10),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    _StatusBadge(
-                                      label: service.activeState,
-                                      color: _activeColor(
-                                        service.activeState,
-                                        isDark:
-                                            Theme.of(context).brightness ==
-                                                Brightness.dark,
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton.tonalIcon(
+                      onPressed: _selectedServerId == null || widget.controller.refreshingCatalog
+                          ? null
+                          : () => unawaited(
+                                _loadCatalog(_selectedServerId!, forceRefresh: true),
+                              ),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Refresh'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (_selectedServerId != null &&
+                    widget.controller.serverErrors[_selectedServerId!] != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(widget.controller.serverErrors[_selectedServerId!]!),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Expanded(
+                  child: filtered.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No services match the current server and search filter.',
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final service = filtered[index];
+                            final isAdded = widget.controller
+                                .isManagedServiceTracked(service.unitName);
+                            final isSelected =
+                                _selectedServiceName == service.unitName;
+
+                            return ListTile(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              tileColor: isSelected
+                                  ? _selectionTint(context)
+                                  : _panelColor(context),
+                              enabled: !isAdded,
+                              title: Text(service.unitName),
+                              subtitle: Text(
+                                service.description.isEmpty
+                                    ? 'No description'
+                                    : service.description,
+                              ),
+                              trailing: isAdded
+                                  ? const _ListStateChip(label: 'Added')
+                                  : isSelected
+                                      ? const Icon(Icons.check_circle)
+                                      : null,
+                              onTap: isAdded
+                                  ? null
+                                  : () => setState(
+                                        () => _selectedServiceName = service.unitName,
                                       ),
-                                    ),
-                                    _StatusBadge(
-                                      label: service.subState,
-                                      color: Theme.of(context).colorScheme.primary,
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          FilledButton.tonalIcon(
-                            onPressed: isPinned
-                                ? null
-                                : () => unawaited(widget.controller.addManagedService(service)),
-                            icon: const Icon(Icons.push_pin),
-                            label: Text(isPinned ? 'Added' : 'Add'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                            );
+                          },
+                        ),
                 ),
+                const SizedBox(height: 12),
+                Text(
+                  'Managed services stay global. Choosing a server here only decides which catalog you search from.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (alreadyAdded) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'This service is already in the managed list.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _canSubmit ? _submit : null,
+          child: Text(_submitting ? 'Adding...' : 'Add selected service'),
         ),
       ],
     );
   }
+
+  bool get _canSubmit {
+    final serverId = _selectedServerId;
+    final serviceName = _selectedServiceName;
+    if (_submitting || serverId == null || serviceName == null) {
+      return false;
+    }
+    return !widget.controller.isManagedServiceTracked(serviceName);
+  }
+
+  Future<void> _loadCatalog(
+    String serverId, {
+    required bool forceRefresh,
+  }) async {
+    widget.controller.setSelectedServerContext(serverId);
+    if (forceRefresh) {
+      await widget.controller.refreshDiscoveredServicesForServer(serverId);
+    } else {
+      await widget.controller.ensureDiscoveredServices(serverId);
+    }
+  }
+
+  Future<void> _submit() async {
+    final serverId = _selectedServerId;
+    final serviceName = _selectedServiceName;
+    if (serverId == null || serviceName == null) {
+      return;
+    }
+
+    final service = _selectedFrom(
+      widget.controller.servicesForServer(serverId),
+      serviceName,
+    );
+    if (service == null) {
+      return;
+    }
+
+    setState(() => _submitting = true);
+    final added = await widget.controller.addManagedServiceFromServer(
+      serverId,
+      service,
+    );
+    if (!mounted) {
+      return;
+    }
+
+    if (added) {
+      Navigator.of(context).pop(service.unitName);
+      return;
+    }
+
+    setState(() => _submitting = false);
+  }
+
+  ServiceSummary? _selectedFrom(
+    List<ServiceSummary> services,
+    String? serviceName,
+  ) {
+    if (serviceName == null) {
+      return null;
+    }
+    for (final service in services) {
+      if (service.unitName == serviceName) {
+        return service;
+      }
+    }
+    return null;
+  }
 }
 
-class _SettingsView extends StatelessWidget {
-  const _SettingsView({required this.controller});
+class _ListStateChip extends StatelessWidget {
+  const _ListStateChip({required this.label});
 
-  final AppController controller;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: _surfaceCardColor(context),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Project summary',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
-              Text('Servers configured: ${controller.servers.length}'),
-              Text('Managed services pinned: ${controller.managedServices.length}'),
-              Text('Web build: $appVersion'),
-              const SizedBox(height: 12),
-              const Text(
-                'This PWA stores VPS profiles and managed services in IndexedDB inside this browser.',
-              ),
-            ],
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
         ),
-      ],
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({
+    required this.title,
+    required this.message,
+  });
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 480),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _surfaceCardColor(context),
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1218,80 +1561,82 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       insetPadding: const EdgeInsets.all(24),
-      child: Container(
+      child: SizedBox(
         width: 960,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${widget.serviceName} logs',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Text(widget.server.name),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.icon(
-                  onPressed: _loading ? null : _loadRecentLogs,
-                  icon: const Icon(Icons.history),
-                  label: const Text('Reload 200 lines'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: _toggleTail,
-                  icon: Icon(_tailing ? Icons.pause_circle : Icons.play_circle),
-                  label: Text(_tailing ? 'Stop tail' : 'Start tail'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (_error != null)
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(_error!),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${widget.serviceName} logs',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
               ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: _logPanelBackground(context),
-                  borderRadius: BorderRadius.circular(18),
+              const SizedBox(height: 8),
+              Text(widget.server.name),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: _loading ? null : _loadRecentLogs,
+                    icon: const Icon(Icons.history),
+                    label: const Text('Reload 200 lines'),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: _toggleTail,
+                    icon: Icon(_tailing ? Icons.pause_circle : Icons.play_circle),
+                    label: Text(_tailing ? 'Stop tail' : 'Start tail'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_error != null)
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(_error!),
                 ),
-                child: _loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : ListView.builder(
-                        itemCount: _logs.length,
-                        itemBuilder: (context, index) {
-                          final log = _logs[index];
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            child: Text(
-                              '[${log.ts}] ${log.line}',
-                              style: TextStyle(
-                                color: _logTextColor(context),
-                                fontFamily: 'Courier',
+              const SizedBox(height: 12),
+              Expanded(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: _logPanelBackground(context),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView.builder(
+                          itemCount: _logs.length,
+                          itemBuilder: (context, index) {
+                            final log = _logs[index];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
                               ),
-                            ),
-                          );
-                        },
-                      ),
+                              child: Text(
+                                '[${log.ts}] ${log.line}',
+                                style: TextStyle(
+                                  color: _logTextColor(context),
+                                  fontFamily: 'Courier',
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1412,10 +1757,12 @@ class _ServerFormDialogState extends State<_ServerFormDialog> {
       baseUrl: _urlController.text.trim(),
       token: _tokenController.text.trim(),
     );
+
     setState(() {
       _testing = true;
       _testResult = null;
     });
+
     try {
       final ping = await AgentApiClient(server).ping();
       if (!mounted) {
@@ -1520,6 +1867,13 @@ ThemeData _buildTheme(Brightness brightness) {
   );
 }
 
+String _pageLabel(_AppPage page) {
+  return switch (page) {
+    _AppPage.services => 'Services',
+    _AppPage.servers => 'Servers',
+  };
+}
+
 String _relativeTime(DateTime dateTime) {
   final delta = DateTime.now().difference(dateTime);
   if (delta.inSeconds < 60) {
@@ -1529,10 +1883,6 @@ String _relativeTime(DateTime dateTime) {
     return '${delta.inMinutes}m ago';
   }
   return '${delta.inHours}h ago';
-}
-
-String _managedStatusKey(String serverId, String managedId) {
-  return '$serverId|$managedId';
 }
 
 Color _activeColor(String? state, {bool isDark = false}) {

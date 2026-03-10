@@ -131,9 +131,17 @@ class AgentApiClient {
       final error = body['error'] as Map<String, dynamic>?;
       final message = error?['message'] as String? ?? 'Request failed.';
       if (response.statusCode == 401 || response.statusCode == 403) {
-        throw ApiError(message, category: ApiErrorCategory.auth);
+        throw ApiError(
+          message,
+          category: ApiErrorCategory.auth,
+          statusCode: response.statusCode,
+        );
       }
-      throw ApiError(message, category: ApiErrorCategory.command);
+      throw ApiError(
+        message,
+        category: ApiErrorCategory.command,
+        statusCode: response.statusCode,
+      );
     } on TimeoutException {
       throw ApiError(
         'Connection timed out. Check the agent URL and network.',

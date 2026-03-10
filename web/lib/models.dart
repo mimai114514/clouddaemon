@@ -215,10 +215,17 @@ class ImportPreview {
 }
 
 class ApiError implements Exception {
-  ApiError(this.message, {this.category = ApiErrorCategory.command});
+  ApiError(
+    this.message, {
+    this.category = ApiErrorCategory.command,
+    this.statusCode,
+  });
 
   final String message;
   final ApiErrorCategory category;
+  final int? statusCode;
+
+  bool get isNotFound => statusCode == 404;
 
   @override
   String toString() => message;
