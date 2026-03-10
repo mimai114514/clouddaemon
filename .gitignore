@@ -12,3 +12,5 @@ agent/*.test
 # Local env files
 .env
 .env.*
+
+config.yaml

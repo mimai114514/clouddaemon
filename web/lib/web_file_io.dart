@@ -11,3 +11,7 @@ Future<void> downloadTextFile({
 Future<String?> pickTextFile() {
   return impl.pickTextFile();
 }
+
+Future<void> openExternalUrl(String url) {
+  return impl.openExternalUrl(url);
+}

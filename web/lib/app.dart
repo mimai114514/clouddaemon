@@ -95,6 +95,12 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
                     onDelete: _controller.selectedServer == null
                         ? null
                         : () => _confirmDeleteServer(context),
+                    onTrustSelfSigned: _controller.selectedServer == null
+                        ? null
+                        : () => _trustSelfSignedCertificate(
+                              context,
+                              _controller.selectedServer!,
+                            ),
                     onImport: () => _importConfig(context),
                     onExport: _controller.servers.isEmpty
                         ? null
@@ -294,6 +300,29 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
         content: Text(message),
       ),
     );
+  }
+
+  Future<void> _trustSelfSignedCertificate(
+    BuildContext context,
+    ServerProfile server,
+  ) async {
+    final trustUrl = _buildTrustUrl(server.baseUrl);
+    if (trustUrl == null) {
+      _showMessage(
+        context,
+        'Agent URL 无法解析，请先检查节点地址。',
+        isError: true,
+      );
+      return;
+    }
+
+    await openExternalUrl(trustUrl);
+    if (context.mounted) {
+      _showMessage(
+        context,
+        '已打开证书信任地址，请在新标签页里完成证书确认后再回到面板。',
+      );
+    }
   }
 }
 
@@ -573,6 +602,7 @@ class _ServerSidebar extends StatelessWidget {
     required this.onAdd,
     required this.onEdit,
     required this.onDelete,
+    required this.onTrustSelfSigned,
     required this.onImport,
     required this.onExport,
   });
@@ -581,6 +611,7 @@ class _ServerSidebar extends StatelessWidget {
   final VoidCallback onAdd;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onTrustSelfSigned;
   final VoidCallback onImport;
   final VoidCallback? onExport;
 
@@ -633,6 +664,11 @@ class _ServerSidebar extends StatelessWidget {
                   onPressed: onEdit,
                   icon: const Icon(Icons.edit),
                   label: const Text('Edit'),
+                ),
+                TextButton.icon(
+                  onPressed: onTrustSelfSigned,
+                  icon: const Icon(Icons.verified_user_outlined),
+                  label: const Text('Trust Cert'),
                 ),
                 TextButton.icon(
                   onPressed: onDelete,
@@ -1363,6 +1399,12 @@ class _ServerFormDialogState extends State<_ServerFormDialog> {
                   label: const Text('Test'),
                 ),
                 const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: _openTrustPage,
+                  icon: const Icon(Icons.verified_user_outlined),
+                  label: const Text('Trust Cert'),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     _testResult ?? 'Ping the agent before saving if you want.',
@@ -1429,6 +1471,27 @@ class _ServerFormDialogState extends State<_ServerFormDialog> {
       }
     }
   }
+
+  Future<void> _openTrustPage() async {
+    final trustUrl = _buildTrustUrl(_urlController.text.trim());
+    if (trustUrl == null) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _testResult = '请输入正确的 Agent URL，再尝试信任证书。';
+      });
+      return;
+    }
+
+    await openExternalUrl(trustUrl);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _testResult = '已打开证书信任地址，请在新标签页确认风险后再回来测试。';
+    });
+  }
 }
 
 class _StatusBadge extends StatelessWidget {
@@ -1480,4 +1543,17 @@ Color _activeColor(String? state) {
     default:
       return const Color(0xFF475569);
   }
+}
+
+String? _buildTrustUrl(String baseUrl) {
+  final uri = Uri.tryParse(baseUrl.trim());
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+    return null;
+  }
+
+  final basePath = uri.path.endsWith('/')
+      ? uri.path.substring(0, uri.path.length - 1)
+      : uri.path;
+
+  return uri.replace(path: '$basePath/api/v1/ping').toString();
 }

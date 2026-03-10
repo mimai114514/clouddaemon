@@ -34,3 +34,7 @@ Future<String?> pickTextFile() async {
   }
   return utf8.decode(bytes);
 }
+
+Future<void> openExternalUrl(String url) async {
+  html.window.open(url, '_blank');
+}

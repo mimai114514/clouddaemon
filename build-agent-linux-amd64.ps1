@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $agentDir = Join-Path $repoRoot "agent"
 $outputDir = Join-Path $agentDir "dist"
-$outputPath = Join-Path $outputDir "clouddaemon-agent-linux-amd64"
+$outputPath = Join-Path $outputDir "clouddaemon-agent"
 
 if (-not (Test-Path $agentDir)) {
     throw "Agent directory not found: $agentDir"

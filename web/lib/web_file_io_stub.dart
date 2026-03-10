@@ -8,3 +8,7 @@ Future<void> downloadTextFile({
 Future<String?> pickTextFile() async {
   throw UnsupportedError('File import is only available in web builds.');
 }
+
+Future<void> openExternalUrl(String url) async {
+  throw UnsupportedError('Opening external URLs is only available in web builds.');
+}

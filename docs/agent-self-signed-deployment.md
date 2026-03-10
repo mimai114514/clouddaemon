@@ -19,7 +19,7 @@
 默认输出文件：
 
 ```text
-agent/dist/clouddaemon-agent-linux-amd64
+agent/dist/clouddaemon-agent
 ```
 
 ## 2. 上传文件到服务器
