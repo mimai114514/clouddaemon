@@ -1517,7 +1517,7 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
       setState(() {
         _logs
           ..clear()
-          ..addAll(logs);
+          ..addAll(_sortLogsNewestFirst(logs));
       });
     } on ApiError catch (error) {
       if (!mounted) {
@@ -1549,7 +1549,7 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
         if (!mounted) {
           return;
         }
-        setState(() => _logs.add(log));
+        setState(() => _logs.insert(0, log));
       },
       onError: (Object error) {
         if (!mounted) {
@@ -1580,12 +1580,32 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '${widget.serviceName} logs',
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${widget.serviceName} logs',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(widget.server.name),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(widget.server.name),
               const SizedBox(height: 16),
               Wrap(
                 spacing: 8,
@@ -1600,10 +1620,6 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
                     onPressed: _toggleTail,
                     icon: Icon(_tailing ? Icons.pause_circle : Icons.play_circle),
                     label: Text(_tailing ? 'Stop tail' : 'Start tail'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Close'),
                   ),
                 ],
               ),
@@ -1626,21 +1642,41 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
                   ),
                   child: _loading
                       ? const Center(child: CircularProgressIndicator())
-                      : ListView.builder(
+                      : ListView.separated(
                           itemCount: _logs.length,
+                          separatorBuilder: (context, index) => Divider(
+                            height: 1,
+                            thickness: 1,
+                            color: _logDividerColor(context),
+                          ),
                           itemBuilder: (context, index) {
                             final log = _logs[index];
                             return Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
-                                vertical: 8,
+                                vertical: 14,
                               ),
-                              child: Text(
-                                '[${log.ts}] ${log.line}',
-                                style: TextStyle(
-                                  color: _logTextColor(context),
-                                  fontFamily: 'Courier',
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    log.line,
+                                    style: TextStyle(
+                                      color: _logTextColor(context),
+                                      fontFamily: 'Courier',
+                                      fontSize: 15,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _friendlyLogTimestamp(log.ts),
+                                    style: TextStyle(
+                                      color: _logMetaTextColor(context),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
                             );
                           },
@@ -1653,6 +1689,56 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
       ),
     );
   }
+
+  List<LogEntry> _sortLogsNewestFirst(List<LogEntry> logs) {
+    final sorted = [...logs];
+    sorted.sort((a, b) {
+      final aTime = _parseLogTimestamp(a.ts);
+      final bTime = _parseLogTimestamp(b.ts);
+      if (aTime == null && bTime == null) {
+        return 0;
+      }
+      if (aTime == null) {
+        return 1;
+      }
+      if (bTime == null) {
+        return -1;
+      }
+      return bTime.compareTo(aTime);
+    });
+    return sorted;
+  }
+}
+
+DateTime? _parseLogTimestamp(String raw) {
+  return DateTime.tryParse(raw)?.toLocal();
+}
+
+String _friendlyLogTimestamp(String raw) {
+  final parsed = _parseLogTimestamp(raw);
+  if (parsed == null) {
+    return raw;
+  }
+
+  final year = parsed.year.toString().padLeft(4, '0');
+  final month = parsed.month.toString().padLeft(2, '0');
+  final day = parsed.day.toString().padLeft(2, '0');
+  final hour = parsed.hour.toString().padLeft(2, '0');
+  final minute = parsed.minute.toString().padLeft(2, '0');
+  final second = parsed.second.toString().padLeft(2, '0');
+  return '$year-$month-$day $hour:$minute:$second · ${_relativeTime(parsed)}';
+}
+
+Color _logDividerColor(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark
+      ? const Color(0xFF153246)
+      : const Color(0xFF1B415A).withValues(alpha: 0.35);
+}
+
+Color _logMetaTextColor(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark ? const Color(0xFF9FBDD1) : const Color(0xFFBAD8EA);
 }
 
 class _ServerFormDialog extends StatefulWidget {
