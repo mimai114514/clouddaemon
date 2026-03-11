@@ -916,15 +916,7 @@ class _ManagedServiceRow extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (showCompactServiceLayout && summary != null)
-                          _StatusBadge(
-                            key: ValueKey(
-                              'service-state-${placement.managedService.serviceName}-${placement.server.id}',
-                            ),
-                            label: summary.activeState,
-                            color: _activeColor(summary.activeState),
-                          )
-                        else if (placement.error != null)
+                        if (!showCompactServiceLayout && placement.error != null)
                           _StatusBadge(
                             label: 'Server issue',
                             color: _warningColor(context),
@@ -949,52 +941,65 @@ class _ManagedServiceRow extends StatelessWidget {
           ),
           if (showCompactServiceLayout) ...[
             const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                alignment: WrapAlignment.end,
-                children: [
-                  if (primaryAction != null)
-                    FilledButton.icon(
-                      key: ValueKey(
-                        'primary-action-${placement.managedService.serviceName}-${placement.server.id}',
-                      ),
-                      onPressed: () => _runAction(context, primaryAction),
-                      icon: Icon(
-                        primaryAction == 'stop'
-                            ? Icons.stop_circle_outlined
-                            : Icons.play_circle_outline,
-                      ),
-                      label: Text(primaryAction == 'stop' ? 'Stop' : 'Start'),
-                    ),
-                  FilledButton.tonalIcon(
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (summary != null)
+                  _StatusBadge(
                     key: ValueKey(
-                      'restart-action-${placement.managedService.serviceName}-${placement.server.id}',
+                      'service-state-${placement.managedService.serviceName}-${placement.server.id}',
                     ),
-                    onPressed: summary == null || !summary.canRestart
-                        ? null
-                        : () => _runAction(context, 'restart'),
-                    icon: const Icon(Icons.restart_alt),
-                    label: const Text('Restart'),
+                    label: summary.activeState,
+                    color: _activeColor(summary.activeState),
                   ),
-                  OutlinedButton.icon(
-                    key: ValueKey(
-                      'logs-action-${placement.managedService.serviceName}-${placement.server.id}',
-                    ),
-                    onPressed: summary == null
-                        ? null
-                        : () => onShowLogs(
-                              placement.server,
-                              placement.managedService.serviceName,
-                            ),
-                    icon: const Icon(Icons.subject),
-                    label: const Text('Logs'),
+                const Spacer(),
+                Flexible(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      if (primaryAction != null)
+                        FilledButton.icon(
+                          key: ValueKey(
+                            'primary-action-${placement.managedService.serviceName}-${placement.server.id}',
+                          ),
+                          onPressed: () => _runAction(context, primaryAction),
+                          icon: Icon(
+                            primaryAction == 'stop'
+                                ? Icons.stop_circle_outlined
+                                : Icons.play_circle_outline,
+                          ),
+                          label: Text(primaryAction == 'stop' ? 'Stop' : 'Start'),
+                        ),
+                      FilledButton.tonalIcon(
+                        key: ValueKey(
+                          'restart-action-${placement.managedService.serviceName}-${placement.server.id}',
+                        ),
+                        onPressed: summary == null || !summary.canRestart
+                            ? null
+                            : () => _runAction(context, 'restart'),
+                        icon: const Icon(Icons.restart_alt),
+                        label: const Text('Restart'),
+                      ),
+                      OutlinedButton.icon(
+                        key: ValueKey(
+                          'logs-action-${placement.managedService.serviceName}-${placement.server.id}',
+                        ),
+                        onPressed: summary == null
+                            ? null
+                            : () => onShowLogs(
+                                  placement.server,
+                                  placement.managedService.serviceName,
+                                ),
+                        icon: const Icon(Icons.subject),
+                        label: const Text('Logs'),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
           if (!showCompactServiceLayout) ...[
@@ -1726,7 +1731,7 @@ String _friendlyLogTimestamp(String raw) {
   final hour = parsed.hour.toString().padLeft(2, '0');
   final minute = parsed.minute.toString().padLeft(2, '0');
   final second = parsed.second.toString().padLeft(2, '0');
-  return '$year-$month-$day $hour:$minute:$second · ${_relativeTime(parsed)}';
+  return '$year-$month-$day $hour:$minute:$second';
 }
 
 Color _logDividerColor(BuildContext context) {

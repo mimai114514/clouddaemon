@@ -250,7 +250,14 @@ void main() {
     final primaryActionOffset = tester.getTopLeft(
       find.byKey(const ValueKey('primary-action-nginx.service-prod')),
     );
-    expect(primaryActionOffset.dy, greaterThan(statusOffset.dy));
+    final serverNameOffset = tester.getTopLeft(
+      find.descendant(of: nginxRow, matching: find.text('prod')),
+    );
+    expect(statusOffset.dy, greaterThan(serverNameOffset.dy));
+    expect(
+      (primaryActionOffset.dy - statusOffset.dy).abs(),
+      lessThanOrEqualTo(4),
+    );
     expect(
       find.descendant(
         of: nginxRow,
