@@ -953,50 +953,53 @@ class _ManagedServiceRow extends StatelessWidget {
                     color: _activeColor(summary.activeState),
                   ),
                 const Spacer(),
-                Flexible(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      if (primaryAction != null)
-                        FilledButton.icon(
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        if (primaryAction != null)
+                          FilledButton.icon(
+                            key: ValueKey(
+                              'primary-action-${placement.managedService.serviceName}-${placement.server.id}',
+                            ),
+                            onPressed: () => _runAction(context, primaryAction),
+                            icon: Icon(
+                              primaryAction == 'stop'
+                                  ? Icons.stop_circle_outlined
+                                  : Icons.play_circle_outline,
+                            ),
+                            label: Text(primaryAction == 'stop' ? 'Stop' : 'Start'),
+                          ),
+                        FilledButton.tonalIcon(
                           key: ValueKey(
-                            'primary-action-${placement.managedService.serviceName}-${placement.server.id}',
+                            'restart-action-${placement.managedService.serviceName}-${placement.server.id}',
                           ),
-                          onPressed: () => _runAction(context, primaryAction),
-                          icon: Icon(
-                            primaryAction == 'stop'
-                                ? Icons.stop_circle_outlined
-                                : Icons.play_circle_outline,
+                          onPressed: summary == null || !summary.canRestart
+                              ? null
+                              : () => _runAction(context, 'restart'),
+                          icon: const Icon(Icons.restart_alt),
+                          label: const Text('Restart'),
+                        ),
+                        OutlinedButton.icon(
+                          key: ValueKey(
+                            'logs-action-${placement.managedService.serviceName}-${placement.server.id}',
                           ),
-                          label: Text(primaryAction == 'stop' ? 'Stop' : 'Start'),
+                          onPressed: summary == null
+                              ? null
+                              : () => onShowLogs(
+                                    placement.server,
+                                    placement.managedService.serviceName,
+                                  ),
+                          icon: const Icon(Icons.subject),
+                          label: const Text('Logs'),
                         ),
-                      FilledButton.tonalIcon(
-                        key: ValueKey(
-                          'restart-action-${placement.managedService.serviceName}-${placement.server.id}',
-                        ),
-                        onPressed: summary == null || !summary.canRestart
-                            ? null
-                            : () => _runAction(context, 'restart'),
-                        icon: const Icon(Icons.restart_alt),
-                        label: const Text('Restart'),
-                      ),
-                      OutlinedButton.icon(
-                        key: ValueKey(
-                          'logs-action-${placement.managedService.serviceName}-${placement.server.id}',
-                        ),
-                        onPressed: summary == null
-                            ? null
-                            : () => onShowLogs(
-                                  placement.server,
-                                  placement.managedService.serviceName,
-                                ),
-                        icon: const Icon(Icons.subject),
-                        label: const Text('Logs'),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -1716,7 +1719,25 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
 }
 
 DateTime? _parseLogTimestamp(String raw) {
-  return DateTime.tryParse(raw)?.toLocal();
+  final trimmed = raw.trim();
+  final direct = DateTime.tryParse(trimmed);
+  if (direct != null) {
+    return direct.toLocal();
+  }
+
+  final match = RegExp(
+    r'(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?',
+  ).firstMatch(trimmed);
+  if (match == null) {
+    return null;
+  }
+
+  final candidate = match.group(0);
+  if (candidate == null) {
+    return null;
+  }
+
+  return DateTime.tryParse(candidate)?.toLocal();
 }
 
 String _friendlyLogTimestamp(String raw) {
