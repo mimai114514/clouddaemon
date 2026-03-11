@@ -66,6 +66,11 @@ void main() {
 
     expect(nginxGroup, findsOneWidget);
     expect(dockerGroup, findsOneWidget);
+    expect(
+      find.descendant(of: nginxGroup, matching: find.textContaining('currently expose')),
+      findsNothing,
+    );
+    expect(find.descendant(of: nginxGroup, matching: find.text('2')), findsOneWidget);
     expect(find.descendant(of: nginxGroup, matching: find.text('prod')), findsOneWidget);
     expect(
       find.descendant(of: nginxGroup, matching: find.text('staging')),
@@ -239,6 +244,13 @@ void main() {
       find.descendant(of: nginxRow, matching: find.textContaining('Refreshed')),
       findsNothing,
     );
+    final statusOffset = tester.getTopLeft(
+      find.byKey(const ValueKey('service-state-nginx.service-prod')),
+    );
+    final primaryActionOffset = tester.getTopLeft(
+      find.byKey(const ValueKey('primary-action-nginx.service-prod')),
+    );
+    expect(primaryActionOffset.dy, greaterThan(statusOffset.dy));
     expect(
       find.descendant(
         of: nginxRow,
@@ -269,6 +281,46 @@ void main() {
     );
   });
 
+  testWidgets('server cards use inline online badge and simplified metadata', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 1200));
+    final controller = await _buildController(
+      servers: [prod, staging],
+      managedServices: [
+        _managed('managed-nginx', 'nginx.service'),
+        _managed('managed-docker', 'docker.service'),
+      ],
+      dataByServerId: _defaultServerData(),
+    );
+
+    await tester.pumpWidget(CloudDaemonApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Servers'));
+    await tester.pumpAndSettle();
+
+    final prodCard = find.byKey(const ValueKey('server-card-prod'));
+
+    expect(
+      find.descendant(of: prodCard, matching: find.text('online')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: prodCard, matching: find.textContaining('Catalog')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: prodCard, matching: find.text('Trust cert')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: prodCard, matching: find.text('Managed services')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: prodCard, matching: find.text('2')), findsOneWidget);
+  });
+
   testWidgets('refresh states do not render top loading bars', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1440, 1200));
     final controller = await _buildController(
@@ -290,6 +342,40 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
+
+  testWidgets('navigation drawer removes intro copy and spaces destinations', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 1200));
+    final controller = await _buildController(
+      servers: [prod, staging],
+      managedServices: [_managed('managed-nginx', 'nginx.service')],
+      dataByServerId: _defaultServerData(),
+    );
+
+    await tester.pumpWidget(CloudDaemonApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Service and server operations from one browser console.'),
+      findsNothing,
+    );
+
+    final servicesDestination = find.widgetWithText(
+      NavigationDrawerDestination,
+      'Services',
+    );
+    final serversDestination = find.widgetWithText(
+      NavigationDrawerDestination,
+      'Servers',
+    );
+
+    final servicesBottom =
+        tester.getBottomLeft(servicesDestination).dy;
+    final serversTop = tester.getTopLeft(serversDestination).dy;
+
+    expect(serversTop - servicesBottom, greaterThanOrEqualTo(8));
   });
 }
 

@@ -119,7 +119,6 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
           onAddServer: () => _showServerForm(context),
           onEditServer: (server) => _showServerForm(context, existing: server),
           onDeleteServer: (server) => _confirmDeleteServer(context, server),
-          onTrustServer: (server) => _trustSelfSignedCertificate(context, server),
           onImport: () => _importConfig(context),
           onExport: () => _exportConfig(context),
           onAddManagedServiceForServer: (serverId) => _showManagedServicePicker(
@@ -306,29 +305,6 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
     }
   }
 
-  Future<void> _trustSelfSignedCertificate(
-    BuildContext context,
-    ServerProfile server,
-  ) async {
-    final trustUrl = _buildTrustUrl(server.baseUrl);
-    if (trustUrl == null) {
-      _showMessage(
-        context,
-        'Agent URL 无法解析，请先检查节点地址。',
-        isError: true,
-      );
-      return;
-    }
-
-    await openExternalUrl(trustUrl);
-    if (context.mounted) {
-      _showMessage(
-        context,
-        '已打开证书信任地址，请在新标签页里完成证书确认后再回到面板。',
-      );
-    }
-  }
-
   void _showMessage(
     BuildContext context,
     String message, {
@@ -369,21 +345,16 @@ class _AppNavigationDrawer extends StatelessWidget {
                   'CloudDaemon',
                   style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Service and server operations from one browser console.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
               ],
             ),
           ),
+          const SizedBox(height: 8),
           const NavigationDrawerDestination(
             icon: Icon(Icons.hub_outlined),
             selectedIcon: Icon(Icons.hub),
             label: Text('Services'),
           ),
+          const SizedBox(height: 10),
           const NavigationDrawerDestination(
             icon: Icon(Icons.dns_outlined),
             selectedIcon: Icon(Icons.dns),
@@ -481,7 +452,6 @@ class _ServersPage extends StatelessWidget {
     required this.onAddServer,
     required this.onEditServer,
     required this.onDeleteServer,
-    required this.onTrustServer,
     required this.onImport,
     required this.onExport,
     required this.onAddManagedServiceForServer,
@@ -492,7 +462,6 @@ class _ServersPage extends StatelessWidget {
   final VoidCallback onAddServer;
   final ValueChanged<ServerProfile> onEditServer;
   final ValueChanged<ServerProfile> onDeleteServer;
-  final ValueChanged<ServerProfile> onTrustServer;
   final VoidCallback onImport;
   final VoidCallback onExport;
   final ValueChanged<String> onAddManagedServiceForServer;
@@ -577,7 +546,6 @@ class _ServersPage extends StatelessWidget {
                       controller: controller,
                       onEditServer: onEditServer,
                       onDeleteServer: onDeleteServer,
-                      onTrustServer: onTrustServer,
                       onAddManagedService: onAddManagedServiceForServer,
                       onShowLogs: onShowLogs,
                     );
@@ -705,8 +673,10 @@ class _ServiceGroupCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
                       group.managedService.serviceName,
@@ -715,13 +685,7 @@ class _ServiceGroupCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${group.entries.length} server${group.entries.length == 1 ? '' : 's'} currently expose this service.',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+                    _ListStateChip(label: '${group.entries.length}'),
                   ],
                 ),
               ),
@@ -770,7 +734,6 @@ class _ServerSectionCard extends StatelessWidget {
     required this.controller,
     required this.onEditServer,
     required this.onDeleteServer,
-    required this.onTrustServer,
     required this.onAddManagedService,
     required this.onShowLogs,
   });
@@ -779,14 +742,12 @@ class _ServerSectionCard extends StatelessWidget {
   final AppController controller;
   final ValueChanged<ServerProfile> onEditServer;
   final ValueChanged<ServerProfile> onDeleteServer;
-  final ValueChanged<ServerProfile> onTrustServer;
   final ValueChanged<String> onAddManagedService;
   final void Function(ServerProfile server, String serviceName) onShowLogs;
 
   @override
   Widget build(BuildContext context) {
     final server = section.server;
-    final discoveredCount = controller.servicesForServer(server.id).length;
 
     return Container(
       key: ValueKey('server-card-${server.id}'),
@@ -805,43 +766,27 @@ class _ServerSectionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      server.name,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(server.baseUrl),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    Row(
                       children: [
+                        Expanded(
+                          child: Text(
+                            server.name,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
                         _StatusBadge(
-                          label: section.error == null
-                              ? 'Online ${section.ping?.hostname ?? ''}'.trim()
-                              : 'Offline',
+                          label: section.error == null ? 'online' : 'offline',
                           color: section.error == null
                               ? Theme.of(context).colorScheme.primary
                               : _warningColor(context),
                         ),
-                        if (section.ping != null)
-                          _StatusBadge(
-                            label: 'Version ${section.ping!.version}',
-                            color: Theme.of(context).colorScheme.secondary,
-                          ),
-                        _StatusBadge(
-                          label: 'Managed ${section.entries.length}',
-                          color: Theme.of(context).colorScheme.tertiary,
-                        ),
-                        _StatusBadge(
-                          label: 'Catalog $discoveredCount',
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
                       ],
                     ),
+                    const SizedBox(height: 6),
+                    Text(server.baseUrl),
                     if (section.error != null) ...[
                       const SizedBox(height: 10),
                       Text(
@@ -871,11 +816,6 @@ class _ServerSectionCard extends StatelessWidget {
                     label: const Text('Edit'),
                   ),
                   OutlinedButton.icon(
-                    onPressed: () => onTrustServer(server),
-                    icon: const Icon(Icons.verified_user_outlined),
-                    label: const Text('Trust cert'),
-                  ),
-                  OutlinedButton.icon(
                     onPressed: () => onDeleteServer(server),
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Delete'),
@@ -885,9 +825,15 @@ class _ServerSectionCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          const Text(
-            'Managed services',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          Row(
+            children: [
+              const Text(
+                'Managed services',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(width: 8),
+              _ListStateChip(label: '${section.entries.length}'),
+            ],
           ),
           const SizedBox(height: 12),
           if (section.entries.isEmpty)
@@ -999,55 +945,58 @@ class _ManagedServiceRow extends StatelessWidget {
                   ],
                 ),
               ),
-              if (showCompactServiceLayout) ...[
-                const SizedBox(width: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  alignment: WrapAlignment.end,
-                  children: [
-                    if (primaryAction != null)
-                      FilledButton.icon(
-                        key: ValueKey(
-                          'primary-action-${placement.managedService.serviceName}-${placement.server.id}',
-                        ),
-                        onPressed: () => _runAction(context, primaryAction),
-                        icon: Icon(
-                          primaryAction == 'stop'
-                              ? Icons.stop_circle_outlined
-                              : Icons.play_circle_outline,
-                        ),
-                        label: Text(primaryAction == 'stop' ? 'Stop' : 'Start'),
-                      ),
-                    FilledButton.tonalIcon(
-                      key: ValueKey(
-                        'restart-action-${placement.managedService.serviceName}-${placement.server.id}',
-                      ),
-                      onPressed: summary == null || !summary.canRestart
-                          ? null
-                          : () => _runAction(context, 'restart'),
-                      icon: const Icon(Icons.restart_alt),
-                      label: const Text('Restart'),
-                    ),
-                    OutlinedButton.icon(
-                      key: ValueKey(
-                        'logs-action-${placement.managedService.serviceName}-${placement.server.id}',
-                      ),
-                      onPressed: summary == null
-                          ? null
-                          : () => onShowLogs(
-                                placement.server,
-                                placement.managedService.serviceName,
-                              ),
-                      icon: const Icon(Icons.subject),
-                      label: const Text('Logs'),
-                    ),
-                  ],
-                ),
-              ],
             ],
           ),
+          if (showCompactServiceLayout) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.end,
+                children: [
+                  if (primaryAction != null)
+                    FilledButton.icon(
+                      key: ValueKey(
+                        'primary-action-${placement.managedService.serviceName}-${placement.server.id}',
+                      ),
+                      onPressed: () => _runAction(context, primaryAction),
+                      icon: Icon(
+                        primaryAction == 'stop'
+                            ? Icons.stop_circle_outlined
+                            : Icons.play_circle_outline,
+                      ),
+                      label: Text(primaryAction == 'stop' ? 'Stop' : 'Start'),
+                    ),
+                  FilledButton.tonalIcon(
+                    key: ValueKey(
+                      'restart-action-${placement.managedService.serviceName}-${placement.server.id}',
+                    ),
+                    onPressed: summary == null || !summary.canRestart
+                        ? null
+                        : () => _runAction(context, 'restart'),
+                    icon: const Icon(Icons.restart_alt),
+                    label: const Text('Restart'),
+                  ),
+                  OutlinedButton.icon(
+                    key: ValueKey(
+                      'logs-action-${placement.managedService.serviceName}-${placement.server.id}',
+                    ),
+                    onPressed: summary == null
+                        ? null
+                        : () => onShowLogs(
+                              placement.server,
+                              placement.managedService.serviceName,
+                            ),
+                    icon: const Icon(Icons.subject),
+                    label: const Text('Logs'),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (!showCompactServiceLayout) ...[
             const SizedBox(height: 12),
             Wrap(
