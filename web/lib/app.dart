@@ -435,10 +435,6 @@ class _ServicesPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          if (controller.refreshingManaged || controller.refreshingCatalog) ...[
-            const LinearProgressIndicator(),
-            const SizedBox(height: 16),
-          ],
           if (controller.servers.isEmpty)
             const Expanded(
               child: _EmptyState(
@@ -559,10 +555,6 @@ class _ServersPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          if (controller.refreshingManaged || controller.refreshingCatalog) ...[
-            const LinearProgressIndicator(),
-            const SizedBox(height: 16),
-          ],
           if (sections.isEmpty)
             const Expanded(
               child: _EmptyState(
@@ -945,7 +937,8 @@ class _ManagedServiceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final summary = placement.summary;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryAction = _primaryAction(summary);
+    final showCompactServiceLayout = showServerLabel;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -963,30 +956,41 @@ class _ManagedServiceRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      showServerLabel
-                          ? placement.server.name
-                          : placement.managedService.serviceName,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            showCompactServiceLayout
+                                ? placement.server.name
+                                : placement.managedService.serviceName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        if (showCompactServiceLayout && summary != null)
+                          _StatusBadge(
+                            key: ValueKey(
+                              'service-state-${placement.managedService.serviceName}-${placement.server.id}',
+                            ),
+                            label: summary.activeState,
+                            color: _activeColor(summary.activeState),
+                          )
+                        else if (placement.error != null)
+                          _StatusBadge(
+                            label: 'Server issue',
+                            color: _warningColor(context),
+                          ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      showServerLabel
-                          ? placement.server.baseUrl
-                          : summary?.description.isNotEmpty == true
-                              ? summary!.description
-                              : 'No service metadata yet.',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    if (showServerLabel) ...[
+                    if (!showCompactServiceLayout) ...[
                       const SizedBox(height: 4),
                       Text(
-                        placement.managedService.serviceName,
+                        summary?.description.isNotEmpty == true
+                            ? summary!.description
+                            : 'No service metadata yet.',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -995,38 +999,82 @@ class _ManagedServiceRow extends StatelessWidget {
                   ],
                 ),
               ),
-              if (placement.error != null)
-                _StatusBadge(
-                  label: 'Server issue',
-                  color: _warningColor(context),
+              if (showCompactServiceLayout) ...[
+                const SizedBox(width: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    if (primaryAction != null)
+                      FilledButton.icon(
+                        key: ValueKey(
+                          'primary-action-${placement.managedService.serviceName}-${placement.server.id}',
+                        ),
+                        onPressed: () => _runAction(context, primaryAction),
+                        icon: Icon(
+                          primaryAction == 'stop'
+                              ? Icons.stop_circle_outlined
+                              : Icons.play_circle_outline,
+                        ),
+                        label: Text(primaryAction == 'stop' ? 'Stop' : 'Start'),
+                      ),
+                    FilledButton.tonalIcon(
+                      key: ValueKey(
+                        'restart-action-${placement.managedService.serviceName}-${placement.server.id}',
+                      ),
+                      onPressed: summary == null || !summary.canRestart
+                          ? null
+                          : () => _runAction(context, 'restart'),
+                      icon: const Icon(Icons.restart_alt),
+                      label: const Text('Restart'),
+                    ),
+                    OutlinedButton.icon(
+                      key: ValueKey(
+                        'logs-action-${placement.managedService.serviceName}-${placement.server.id}',
+                      ),
+                      onPressed: summary == null
+                          ? null
+                          : () => onShowLogs(
+                                placement.server,
+                                placement.managedService.serviceName,
+                              ),
+                      icon: const Icon(Icons.subject),
+                      label: const Text('Logs'),
+                    ),
+                  ],
                 ),
+              ],
             ],
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _StatusBadge(
-                label: 'active: ${summary?.activeState ?? 'unknown'}',
-                color: _activeColor(summary?.activeState, isDark: isDark),
-              ),
-              _StatusBadge(
-                label: 'sub: ${summary?.subState ?? 'unknown'}',
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              _StatusBadge(
-                label: 'load: ${summary?.loadState ?? 'unknown'}',
-                color: Theme.of(context).colorScheme.secondary,
-              ),
-              _StatusBadge(
-                label: placement.refreshedAt == null
-                    ? 'Not refreshed'
-                    : 'Refreshed ${_relativeTime(placement.refreshedAt!)}',
-                color: Theme.of(context).colorScheme.tertiary,
-              ),
-            ],
-          ),
+          if (!showCompactServiceLayout) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _StatusBadge(
+                  label: 'active: ${summary?.activeState ?? 'unknown'}',
+                  color: _activeColor(summary?.activeState),
+                ),
+                _StatusBadge(
+                  label: 'sub: ${summary?.subState ?? 'unknown'}',
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                _StatusBadge(
+                  label: 'load: ${summary?.loadState ?? 'unknown'}',
+                  color: Theme.of(context).colorScheme.secondary,
+                ),
+                _StatusBadge(
+                  label: placement.refreshedAt == null
+                      ? 'Not refreshed'
+                      : 'Refreshed ${_relativeTime(placement.refreshedAt!)}',
+                  color: Theme.of(context).colorScheme.tertiary,
+                ),
+              ],
+            ),
+          ],
           if (placement.error != null) ...[
             const SizedBox(height: 10),
             Text(
@@ -1034,44 +1082,59 @@ class _ManagedServiceRow extends StatelessWidget {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              FilledButton(
-                onPressed: summary == null || !summary.canStart
-                    ? null
-                    : () => _runAction(context, 'start'),
-                child: const Text('Start'),
-              ),
-              FilledButton.tonal(
-                onPressed: summary == null || !summary.canRestart
-                    ? null
-                    : () => _runAction(context, 'restart'),
-                child: const Text('Restart'),
-              ),
-              OutlinedButton(
-                onPressed: summary == null || !summary.canStop
-                    ? null
-                    : () => _runAction(context, 'stop'),
-                child: const Text('Stop'),
-              ),
-              OutlinedButton.icon(
-                onPressed: summary == null
-                    ? null
-                    : () => onShowLogs(
-                          placement.server,
-                          placement.managedService.serviceName,
-                        ),
-                icon: const Icon(Icons.subject),
-                label: const Text('Logs'),
-              ),
-            ],
-          ),
+          if (!showCompactServiceLayout) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                FilledButton(
+                  onPressed: summary == null || !summary.canStart
+                      ? null
+                      : () => _runAction(context, 'start'),
+                  child: const Text('Start'),
+                ),
+                FilledButton.tonal(
+                  onPressed: summary == null || !summary.canRestart
+                      ? null
+                      : () => _runAction(context, 'restart'),
+                  child: const Text('Restart'),
+                ),
+                OutlinedButton(
+                  onPressed: summary == null || !summary.canStop
+                      ? null
+                      : () => _runAction(context, 'stop'),
+                  child: const Text('Stop'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: summary == null
+                      ? null
+                      : () => onShowLogs(
+                            placement.server,
+                            placement.managedService.serviceName,
+                          ),
+                  icon: const Icon(Icons.subject),
+                  label: const Text('Logs'),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  String? _primaryAction(ServiceSummary? summary) {
+    if (summary == null) {
+      return null;
+    }
+    if (summary.activeState == 'active' && summary.canStop) {
+      return 'stop';
+    }
+    if (summary.activeState != 'active' && summary.canStart) {
+      return 'start';
+    }
+    return null;
   }
 
   Future<void> _runAction(BuildContext context, String action) async {
@@ -1806,7 +1869,11 @@ class _ServerFormDialogState extends State<_ServerFormDialog> {
 }
 
 class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.label, required this.color});
+  const _StatusBadge({
+    super.key,
+    required this.label,
+    required this.color,
+  });
 
   final String label;
   final Color color;
@@ -1885,16 +1952,16 @@ String _relativeTime(DateTime dateTime) {
   return '${delta.inHours}h ago';
 }
 
-Color _activeColor(String? state, {bool isDark = false}) {
+Color _activeColor(String? state) {
   switch (state) {
     case 'active':
-      return isDark ? const Color(0xFF65D6B3) : const Color(0xFF167D68);
+      return const Color(0xFF167D68);
     case 'failed':
-      return isDark ? const Color(0xFFFF8A8A) : const Color(0xFFCC3D3D);
+      return const Color(0xFFCC3D3D);
     case 'activating':
-      return isDark ? const Color(0xFFFFC97A) : const Color(0xFFC77B1C);
+      return const Color(0xFFC77B1C);
     default:
-      return isDark ? const Color(0xFF9EB7C9) : const Color(0xFF5A7386);
+      return const Color(0xFF5A7386);
   }
 }
 

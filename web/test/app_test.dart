@@ -183,6 +183,114 @@ void main() {
     );
     expect(find.text('prod'), findsOneWidget);
   });
+
+  testWidgets('services page uses compact row layout and dynamic actions', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 1200));
+    final controller = await _buildController(
+      servers: [prod, staging],
+      managedServices: [
+        _managed('managed-nginx', 'nginx.service'),
+        _managed('managed-docker', 'docker.service'),
+      ],
+      dataByServerId: _defaultServerData(),
+    );
+
+    await tester.pumpWidget(CloudDaemonApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    final nginxRow = find.byKey(
+      const ValueKey('service-row-nginx.service-prod'),
+    );
+    final dockerRow = find.byKey(
+      const ValueKey('service-row-docker.service-prod'),
+    );
+
+    expect(nginxRow, findsOneWidget);
+    expect(dockerRow, findsOneWidget);
+    expect(
+      find.descendant(
+        of: nginxRow,
+        matching: find.text('https://prod.example.com'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: nginxRow, matching: find.text('nginx.service')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: nginxRow,
+        matching: find.byKey(const ValueKey('service-state-nginx.service-prod')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: nginxRow, matching: find.textContaining('sub:')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: nginxRow, matching: find.textContaining('load:')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: nginxRow, matching: find.textContaining('Refreshed')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: nginxRow,
+        matching: find.byKey(const ValueKey('primary-action-nginx.service-prod')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: nginxRow,
+        matching: find.byKey(const ValueKey('restart-action-nginx.service-prod')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: nginxRow,
+        matching: find.byKey(const ValueKey('logs-action-nginx.service-prod')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dockerRow,
+        matching: find.byKey(const ValueKey('primary-action-docker.service-prod')),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('refresh states do not render top loading bars', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 1200));
+    final controller = await _buildController(
+      servers: [prod, staging],
+      managedServices: [_managed('managed-nginx', 'nginx.service')],
+      dataByServerId: _defaultServerData(),
+    );
+
+    controller.refreshingCatalog = true;
+    controller.refreshingManaged = true;
+    controller.notifyListeners();
+
+    await tester.pumpWidget(CloudDaemonApp(controller: controller));
+    await tester.pump();
+
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+
+    await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Servers'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
 }
 
 Future<AppController> _buildController({
@@ -223,10 +331,10 @@ Map<String, _FakeServerData> _defaultServerData() {
           unitName: 'docker.service',
           description: 'Docker engine',
           loadState: 'loaded',
-          activeState: 'active',
-          subState: 'running',
-          canStart: false,
-          canStop: true,
+          activeState: 'inactive',
+          subState: 'dead',
+          canStart: true,
+          canStop: false,
           canRestart: true,
         ),
         ServiceSummary(
@@ -245,10 +353,10 @@ Map<String, _FakeServerData> _defaultServerData() {
           unitName: 'docker.service',
           description: 'Docker engine',
           loadState: 'loaded',
-          activeState: 'active',
-          subState: 'running',
-          canStart: false,
-          canStop: true,
+          activeState: 'inactive',
+          subState: 'dead',
+          canStart: true,
+          canStop: false,
           canRestart: true,
         ),
         'nginx.service': ServiceSummary(
