@@ -12,7 +12,10 @@ import 'web_file_io.dart';
 export 'app_controller.dart';
 
 const _uuid = Uuid();
-const appVersion = '1.0.0+1';
+const ciCdDeployTime = String.fromEnvironment(
+  'CI_CD_DEPLOY_TIME',
+  defaultValue: 'local build',
+);
 
 enum _AppPage { services, servers }
 
@@ -519,7 +522,7 @@ class _ServersPage extends StatelessWidget {
               ),
               const _SummaryChip(
                 label: 'Web build',
-                value: appVersion,
+                value: ciCdDeployTime,
               ),
             ],
           ),
