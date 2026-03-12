@@ -8,7 +8,7 @@ cd agent
 go build -o clouddaemon-agent ./cmd/clouddaemon-agent
 ```
 
-Copy the binary and a config file based on [`agent/config.example.yaml`](/C:/Users/Infinity/Documents/Code/clouddaemon/agent/config.example.yaml) to the server.
+Copy the binary and a config file based on [`agent/config.example.yaml`](../agent/config.example.yaml) to the server.
 
 Generate or provide a TLS certificate and key. The browser connects directly to the agent, so HTTPS/WSS is required.
 

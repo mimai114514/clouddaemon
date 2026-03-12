@@ -42,7 +42,7 @@ sudo chmod 755 /opt/clouddaemon /etc/clouddaemon
 
 把以下文件上传到服务器：
 - agent 可执行文件
-- 基于 [config.example.yaml](/C:/Users/Infinity/Documents/Code/clouddaemon/agent/config.example.yaml) 修改后的配置文件
+- 基于 [config.example.yaml](../agent/config.example.yaml) 修改后的配置文件
 
 ## 3. 生成自签证书
 如果你使用域名，例如 `agent.example.com`，建议证书的 `CN` 和 `subjectAltName` 都写这个域名。
