@@ -70,6 +70,7 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
               final wide = constraints.maxWidth >= 1120;
               final navigation = _AppNavigationDrawer(
                 currentPage: _currentPage,
+                compact: !wide,
                 onSelect: (page) {
                   setState(() => _currentPage = page);
                   if (!wide) {
@@ -323,45 +324,84 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
 class _AppNavigationDrawer extends StatelessWidget {
   const _AppNavigationDrawer({
     required this.currentPage,
+    required this.compact,
     required this.onSelect,
   });
 
   final _AppPage currentPage;
+  final bool compact;
   final ValueChanged<_AppPage> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: NavigationDrawer(
-        selectedIndex: currentPage.index,
-        onDestinationSelected: (index) => onSelect(_AppPage.values[index]),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'CloudDaemon',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                ),
-              ],
+    final content = ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+          child: Text(
+            'CloudDaemon',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 8),
-          const NavigationDrawerDestination(
-            icon: Icon(Icons.hub_outlined),
-            selectedIcon: Icon(Icons.hub),
-            label: Text('Services'),
-          ),
-          const SizedBox(height: 10),
-          const NavigationDrawerDestination(
-            icon: Icon(Icons.dns_outlined),
-            selectedIcon: Icon(Icons.dns),
-            label: Text('Servers'),
-          ),
-        ],
+        ),
+        const Divider(height: 1),
+        _NavTile(
+          icon: Icons.hub_outlined,
+          selectedIcon: Icons.hub,
+          label: 'Services',
+          selected: currentPage == _AppPage.services,
+          onTap: () => onSelect(_AppPage.services),
+        ),
+        _NavTile(
+          icon: Icons.dns_outlined,
+          selectedIcon: Icons.dns,
+          label: 'Servers',
+          selected: currentPage == _AppPage.servers,
+          onTap: () => onSelect(_AppPage.servers),
+        ),
+      ],
+    );
+
+    if (compact) {
+      return RepaintBoundary(child: content);
+    }
+
+    return Card(
+      child: RepaintBoundary(
+        child: content,
       ),
+    );
+  }
+}
+
+class _NavTile extends StatelessWidget {
+  const _NavTile({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListTile(
+      selected: selected,
+      leading: Icon(selected ? selectedIcon : icon),
+      title: Text(label),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      selectedTileColor: colorScheme.secondaryContainer,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+      onTap: onTap,
     );
   }
 }
