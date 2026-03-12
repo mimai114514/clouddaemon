@@ -67,10 +67,7 @@ class ManagedServicePlacement {
 }
 
 class ManagedServiceGroup {
-  ManagedServiceGroup({
-    required this.managedService,
-    required this.entries,
-  });
+  ManagedServiceGroup({required this.managedService, required this.entries});
 
   final ManagedService managedService;
   final List<ManagedServicePlacement> entries;
@@ -91,12 +88,9 @@ class ServerManagedServicesSection {
 }
 
 class AppController extends ChangeNotifier {
-  AppController({
-    AppStorage? storage,
-    AgentClientFactory? clientFactory,
-  })  : _storage = storage ?? AppStorage(),
-        _clientFactory =
-            clientFactory ?? ((server) => HttpAgentClient(server));
+  AppController({AppStorage? storage, AgentClientFactory? clientFactory})
+    : _storage = storage ?? AppStorage(),
+      _clientFactory = clientFactory ?? ((server) => HttpAgentClient(server));
 
   final AppStorage _storage;
   final AgentClientFactory _clientFactory;
@@ -183,7 +177,9 @@ class AppController extends ChangeNotifier {
           ),
         );
       }
-      groups.add(ManagedServiceGroup(managedService: managed, entries: entries));
+      groups.add(
+        ManagedServiceGroup(managedService: managed, entries: entries),
+      );
     }
 
     return groups;
@@ -334,10 +330,7 @@ class AppController extends ChangeNotifier {
     try {
       final ping = await _clientFactory(server).ping();
       serverPings = {...serverPings, server.id: ping};
-      serverErrors = {
-        for (final entry in serverErrors.entries)
-          if (entry.key != server.id) entry.key: entry.value,
-      };
+      _clearServerError(server.id);
     } on ApiError catch (error) {
       serverErrors = {...serverErrors, server.id: error.message};
     }
@@ -406,10 +399,7 @@ class AppController extends ChangeNotifier {
     try {
       final services = await _clientFactory(server).listServices();
       services.sort((a, b) => a.unitName.compareTo(b.unitName));
-      serverErrors = {
-        for (final entry in serverErrors.entries)
-          if (entry.key != server.id) entry.key: entry.value,
-      };
+      _clearServerError(server.id);
       return services;
     } on ApiError catch (error) {
       serverErrors = {...serverErrors, server.id: error.message};
@@ -453,14 +443,18 @@ class AppController extends ChangeNotifier {
     }
 
     await _storage.deleteManagedService(managedId);
-    managedServices = managedServices.where((item) => item.id != managedId).toList();
+    managedServices = managedServices
+        .where((item) => item.id != managedId)
+        .toList();
     managedStatuses = {
       for (final entry in managedStatuses.entries)
-        if (!entry.key.endsWith('|${managed.serviceName}')) entry.key: entry.value,
+        if (!entry.key.endsWith('|${managed.serviceName}'))
+          entry.key: entry.value,
     };
     managedRefreshedAt = {
       for (final entry in managedRefreshedAt.entries)
-        if (!entry.key.endsWith('|${managed.serviceName}')) entry.key: entry.value,
+        if (!entry.key.endsWith('|${managed.serviceName}'))
+          entry.key: entry.value,
     };
     notifyListeners();
   }
@@ -481,19 +475,26 @@ class AppController extends ChangeNotifier {
 
     try {
       for (final server in servers) {
+        final client = _clientFactory(server);
+        final discoveredNames = discoveredServicesByServer[server.id]
+            ?.map((service) => service.unitName)
+            .toSet();
+
         for (final managed in managedServices) {
+          if (discoveredNames != null &&
+              !discoveredNames.contains(managed.serviceName)) {
+            continue;
+          }
+
           try {
-            final summary =
-                await _clientFactory(server).getService(managed.serviceName);
+            final summary = await client.getService(managed.serviceName);
             final key = _managedStatusKey(server.id, managed.serviceName);
             nextStatuses[key] = summary;
             nextRefreshedAt[key] = DateTime.now();
-            serverErrors = {
-              for (final entry in serverErrors.entries)
-                if (entry.key != server.id) entry.key: entry.value,
-            };
+            _clearServerError(server.id);
           } on ApiError catch (error) {
-            if (error.isNotFound) {
+            if (_isServiceUnavailableError(error)) {
+              _clearServerError(server.id);
               continue;
             }
             serverErrors = {...serverErrors, server.id: error.message};
@@ -517,10 +518,9 @@ class AppController extends ChangeNotifier {
     ManagedService managedService,
     String action,
   ) async {
-    final summary = await _clientFactory(server).performAction(
-      managedService.serviceName,
-      action,
-    );
+    final summary = await _clientFactory(
+      server,
+    ).performAction(managedService.serviceName, action);
     final key = _managedStatusKey(server.id, managedService.serviceName);
     managedStatuses = {...managedStatuses, key: summary};
     managedRefreshedAt = {...managedRefreshedAt, key: DateTime.now()};
@@ -561,6 +561,27 @@ class AppController extends ChangeNotifier {
     }
 
     return discovered.any((service) => service.unitName == serviceName);
+  }
+
+  bool _isServiceUnavailableError(ApiError error) {
+    if (error.isNotFound) {
+      return true;
+    }
+
+    final message = error.message.toLowerCase();
+    final mentionsService = message.contains('service');
+    final unavailable =
+        message.contains('not available') ||
+        message.contains('not availble') ||
+        message.contains('not found');
+    return mentionsService && unavailable;
+  }
+
+  void _clearServerError(String serverId) {
+    serverErrors = {
+      for (final entry in serverErrors.entries)
+        if (entry.key != serverId) entry.key: entry.value,
+    };
   }
 
   @override

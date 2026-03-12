@@ -37,13 +37,69 @@ void main() {
         dataByServerId: _defaultServerData(),
       );
 
-      final added = await controller.addManagedServiceFromServer(prod.id, nginx);
+      final added = await controller.addManagedServiceFromServer(
+        prod.id,
+        nginx,
+      );
 
       expect(added, isFalse);
       expect(controller.managedServices, hasLength(1));
       expect(controller.managedServices.single.serviceName, 'nginx.service');
     },
   );
+
+  test(
+    'refreshManagedStatuses ignores service-unavailable command errors',
+    () async {
+      final dataByServerId = _defaultServerData();
+      final stagingData = dataByServerId['staging']!;
+      dataByServerId['staging'] = _FakeServerData(
+        ping: stagingData.ping,
+        discoveredServices: stagingData.discoveredServices,
+        serviceStates: stagingData.serviceStates,
+        getServiceErrors: {
+          'docker.service': ApiError(
+            'service "docker.service" is not availble',
+            category: ApiErrorCategory.command,
+            statusCode: 500,
+          ),
+        },
+      );
+
+      final controller = await _buildController(
+        servers: [prod, staging],
+        managedServices: [
+          _managed('managed-nginx', 'nginx.service'),
+          _managed('managed-docker', 'docker.service'),
+        ],
+        dataByServerId: dataByServerId,
+      );
+
+      controller.discoveredServicesByServer = <String, List<ServiceSummary>>{};
+      await controller.refreshManagedStatuses();
+
+      expect(controller.serverErrors.containsKey(staging.id), isFalse);
+      expect(controller.statusFor(staging.id, 'nginx.service'), isNotNull);
+      expect(controller.statusFor(staging.id, 'docker.service'), isNull);
+    },
+  );
+
+  testWidgets('desktop shell has no outer padding', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 1200));
+    final controller = await _buildController(
+      servers: [prod, staging],
+      managedServices: [_managed('managed-nginx', 'nginx.service')],
+      dataByServerId: _defaultServerData(),
+    );
+
+    await tester.pumpWidget(CloudDaemonApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    final shellPadding = tester.widget<Padding>(
+      find.byKey(const ValueKey('app-shell-padding')),
+    );
+    expect(shellPadding.padding, EdgeInsets.zero);
+  });
 
   testWidgets('service page groups managed services by service name', (
     tester,
@@ -61,65 +117,84 @@ void main() {
     await tester.pumpWidget(CloudDaemonApp(controller: controller));
     await tester.pumpAndSettle();
 
-    final nginxGroup = find.byKey(const ValueKey('service-group-nginx.service'));
-    final dockerGroup = find.byKey(const ValueKey('service-group-docker.service'));
+    final nginxGroup = find.byKey(
+      const ValueKey('service-group-nginx.service'),
+    );
+    final dockerGroup = find.byKey(
+      const ValueKey('service-group-docker.service'),
+    );
 
     expect(nginxGroup, findsOneWidget);
     expect(dockerGroup, findsOneWidget);
     expect(
-      find.descendant(of: nginxGroup, matching: find.textContaining('currently expose')),
+      find.descendant(
+        of: nginxGroup,
+        matching: find.textContaining('currently expose'),
+      ),
       findsNothing,
     );
-    expect(find.descendant(of: nginxGroup, matching: find.text('2')), findsOneWidget);
-    expect(find.descendant(of: nginxGroup, matching: find.text('prod')), findsOneWidget);
+    expect(
+      find.descendant(of: nginxGroup, matching: find.text('2')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: nginxGroup, matching: find.text('prod')),
+      findsOneWidget,
+    );
     expect(
       find.descendant(of: nginxGroup, matching: find.text('staging')),
       findsOneWidget,
     );
-    expect(find.descendant(of: dockerGroup, matching: find.text('prod')), findsOneWidget);
+    expect(
+      find.descendant(of: dockerGroup, matching: find.text('prod')),
+      findsOneWidget,
+    );
     expect(
       find.descendant(of: dockerGroup, matching: find.text('staging')),
       findsNothing,
     );
   });
 
-  testWidgets('server page shows only managed services that exist on each server', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1440, 1200));
-    final controller = await _buildController(
-      servers: [prod, staging],
-      managedServices: [
-        _managed('managed-nginx', 'nginx.service'),
-        _managed('managed-docker', 'docker.service'),
-      ],
-      dataByServerId: _defaultServerData(),
-    );
+  testWidgets(
+    'server page shows only managed services that exist on each server',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 1200));
+      final controller = await _buildController(
+        servers: [prod, staging],
+        managedServices: [
+          _managed('managed-nginx', 'nginx.service'),
+          _managed('managed-docker', 'docker.service'),
+        ],
+        dataByServerId: _defaultServerData(),
+      );
 
-    await tester.pumpWidget(CloudDaemonApp(controller: controller));
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(CloudDaemonApp(controller: controller));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Servers'));
-    await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(NavigationDrawerDestination, 'Servers'),
+      );
+      await tester.pumpAndSettle();
 
-    final prodCard = find.byKey(const ValueKey('server-card-prod'));
-    final stagingCard = find.byKey(const ValueKey('server-card-staging'));
+      final prodCard = find.byKey(const ValueKey('server-card-prod'));
+      final stagingCard = find.byKey(const ValueKey('server-card-staging'));
 
-    expect(prodCard, findsOneWidget);
-    expect(stagingCard, findsOneWidget);
-    expect(
-      find.descendant(of: prodCard, matching: find.text('docker.service')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: stagingCard, matching: find.text('docker.service')),
-      findsNothing,
-    );
-    expect(
-      find.descendant(of: stagingCard, matching: find.text('nginx.service')),
-      findsOneWidget,
-    );
-  });
+      expect(prodCard, findsOneWidget);
+      expect(stagingCard, findsOneWidget);
+      expect(
+        find.descendant(of: prodCard, matching: find.text('docker.service')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: stagingCard, matching: find.text('docker.service')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: stagingCard, matching: find.text('nginx.service')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('server add flow creates one new global managed service', (
     tester,
@@ -134,7 +209,9 @@ void main() {
     await tester.pumpWidget(CloudDaemonApp(controller: controller));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Servers'));
+    await tester.tap(
+      find.widgetWithText(NavigationDrawerDestination, 'Servers'),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('open-add-dialog-prod')));
@@ -150,7 +227,9 @@ void main() {
       containsAll(<String>['nginx.service', 'docker.service']),
     );
 
-    await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Services'));
+    await tester.tap(
+      find.widgetWithText(NavigationDrawerDestination, 'Services'),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -177,9 +256,13 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Servers'));
+    await tester.tap(
+      find.widgetWithText(NavigationDrawerDestination, 'Servers'),
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Services'));
+    await tester.tap(
+      find.widgetWithText(NavigationDrawerDestination, 'Services'),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -228,7 +311,9 @@ void main() {
     expect(
       find.descendant(
         of: nginxRow,
-        matching: find.byKey(const ValueKey('service-state-nginx.service-prod')),
+        matching: find.byKey(
+          const ValueKey('service-state-nginx.service-prod'),
+        ),
       ),
       findsOneWidget,
     );
@@ -261,14 +346,18 @@ void main() {
     expect(
       find.descendant(
         of: nginxRow,
-        matching: find.byKey(const ValueKey('primary-action-nginx.service-prod')),
+        matching: find.byKey(
+          const ValueKey('primary-action-nginx.service-prod'),
+        ),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: nginxRow,
-        matching: find.byKey(const ValueKey('restart-action-nginx.service-prod')),
+        matching: find.byKey(
+          const ValueKey('restart-action-nginx.service-prod'),
+        ),
       ),
       findsOneWidget,
     );
@@ -282,7 +371,9 @@ void main() {
     expect(
       find.descendant(
         of: dockerRow,
-        matching: find.byKey(const ValueKey('primary-action-docker.service-prod')),
+        matching: find.byKey(
+          const ValueKey('primary-action-docker.service-prod'),
+        ),
       ),
       findsOneWidget,
     );
@@ -304,7 +395,9 @@ void main() {
     await tester.pumpWidget(CloudDaemonApp(controller: controller));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Servers'));
+    await tester.tap(
+      find.widgetWithText(NavigationDrawerDestination, 'Servers'),
+    );
     await tester.pumpAndSettle();
 
     final prodCard = find.byKey(const ValueKey('server-card-prod'));
@@ -325,7 +418,10 @@ void main() {
       find.descendant(of: prodCard, matching: find.text('Managed services')),
       findsOneWidget,
     );
-    expect(find.descendant(of: prodCard, matching: find.text('2')), findsOneWidget);
+    expect(
+      find.descendant(of: prodCard, matching: find.text('2')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('refresh states do not render top loading bars', (tester) async {
@@ -345,7 +441,9 @@ void main() {
 
     expect(find.byType(LinearProgressIndicator), findsNothing);
 
-    await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Servers'));
+    await tester.tap(
+      find.widgetWithText(NavigationDrawerDestination, 'Servers'),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(LinearProgressIndicator), findsNothing);
@@ -378,8 +476,7 @@ void main() {
       'Servers',
     );
 
-    final servicesBottom =
-        tester.getBottomLeft(servicesDestination).dy;
+    final servicesBottom = tester.getBottomLeft(servicesDestination).dy;
     final serversTop = tester.getTopLeft(serversDestination).dy;
 
     expect(serversTop - servicesBottom, greaterThanOrEqualTo(8));
@@ -503,8 +600,8 @@ class _FakeAppStorage extends AppStorage {
   _FakeAppStorage({
     required List<ServerProfile> initialServers,
     required List<ManagedService> initialManagedServices,
-  })  : _servers = [...initialServers],
-        _managedServices = [...initialManagedServices];
+  }) : _servers = [...initialServers],
+       _managedServices = [...initialManagedServices];
 
   List<ServerProfile> _servers;
   List<ManagedService> _managedServices;
@@ -531,12 +628,15 @@ class _FakeAppStorage extends AppStorage {
   }
 
   @override
-  Future<List<ManagedService>> loadManagedServices() async => [..._managedServices];
+  Future<List<ManagedService>> loadManagedServices() async => [
+    ..._managedServices,
+  ];
 
   @override
   Future<void> saveManagedService(ManagedService managedService) async {
-    final index =
-        _managedServices.indexWhere((item) => item.id == managedService.id);
+    final index = _managedServices.indexWhere(
+      (item) => item.id == managedService.id,
+    );
     if (index == -1) {
       _managedServices = [..._managedServices, managedService];
       return;
@@ -555,11 +655,13 @@ class _FakeServerData {
     required this.ping,
     required this.discoveredServices,
     required this.serviceStates,
-  });
+    Map<String, ApiError>? getServiceErrors,
+  }) : getServiceErrors = getServiceErrors ?? const {};
 
   final PingInfo ping;
   final List<ServiceSummary> discoveredServices;
   final Map<String, ServiceSummary> serviceStates;
+  final Map<String, ApiError> getServiceErrors;
 }
 
 class _FakeAgentClient implements AgentClient {
@@ -577,6 +679,11 @@ class _FakeAgentClient implements AgentClient {
 
   @override
   Future<ServiceSummary> getService(String serviceName) async {
+    final explicitError = data.getServiceErrors[serviceName];
+    if (explicitError != null) {
+      throw explicitError;
+    }
+
     final service = data.serviceStates[serviceName];
     if (service == null) {
       throw ApiError(
@@ -589,7 +696,10 @@ class _FakeAgentClient implements AgentClient {
   }
 
   @override
-  Future<ServiceSummary> performAction(String serviceName, String action) async {
+  Future<ServiceSummary> performAction(
+    String serviceName,
+    String action,
+  ) async {
     final service = await getService(serviceName);
     return service;
   }

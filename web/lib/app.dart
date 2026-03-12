@@ -21,7 +21,7 @@ enum _AppPage { services, servers }
 
 class CloudDaemonApp extends StatefulWidget {
   CloudDaemonApp({super.key, AppController? controller})
-      : controller = controller ?? AppController();
+    : controller = controller ?? AppController();
 
   final AppController controller;
 
@@ -84,13 +84,12 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
               return Scaffold(
                 appBar: wide
                     ? null
-                    : AppBar(
-                        title: Text(_pageLabel(_currentPage)),
-                      ),
+                    : AppBar(title: Text(_pageLabel(_currentPage))),
                 drawer: wide ? null : Drawer(child: navigation),
                 body: SafeArea(
                   child: Padding(
-                    padding: EdgeInsets.all(wide ? 24 : 16),
+                    key: const ValueKey('app-shell-padding'),
+                    padding: wide ? EdgeInsets.zero : const EdgeInsets.all(16),
                     child: wide
                         ? Row(
                             children: [
@@ -113,34 +112,32 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
   Widget _buildPageContent() {
     return switch (_currentPage) {
       _AppPage.services => _ServicesPage(
-          controller: _controller,
-          onAddManagedService: () => _showManagedServicePicker(context),
-          onShowLogs: _showLogs,
-        ),
+        controller: _controller,
+        onAddManagedService: () => _showManagedServicePicker(context),
+        onShowLogs: _showLogs,
+      ),
       _AppPage.servers => _ServersPage(
-          controller: _controller,
-          onAddServer: () => _showServerForm(context),
-          onEditServer: (server) => _showServerForm(context, existing: server),
-          onDeleteServer: (server) => _confirmDeleteServer(context, server),
-          onImport: () => _importConfig(context),
-          onExport: () => _exportConfig(context),
-          onAddManagedServiceForServer: (serverId) => _showManagedServicePicker(
-            context,
-            initialServerId: serverId,
-            fixedServer: true,
-          ),
-          onShowLogs: _showLogs,
+        controller: _controller,
+        onAddServer: () => _showServerForm(context),
+        onEditServer: (server) => _showServerForm(context, existing: server),
+        onDeleteServer: (server) => _confirmDeleteServer(context, server),
+        onImport: () => _importConfig(context),
+        onExport: () => _exportConfig(context),
+        onAddManagedServiceForServer: (serverId) => _showManagedServicePicker(
+          context,
+          initialServerId: serverId,
+          fixedServer: true,
         ),
+        onShowLogs: _showLogs,
+      ),
     };
   }
 
   void _showLogs(ServerProfile server, String serviceName) {
     showDialog<void>(
       context: _navigatorKey.currentContext ?? context,
-      builder: (_) => ServiceLogsDialog(
-        server: server,
-        serviceName: serviceName,
-      ),
+      builder: (_) =>
+          ServiceLogsDialog(server: server, serviceName: serviceName),
     );
   }
 
@@ -186,7 +183,8 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
     BuildContext context,
     ServerProfile server,
   ) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: _navigatorKey.currentContext ?? context,
           builder: (dialogContext) => AlertDialog(
             title: Text('Delete ${server.name}?'),
@@ -221,7 +219,8 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: _navigatorKey.currentContext ?? context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Export configuration'),
@@ -267,7 +266,8 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
     }
 
     final preview = _controller.buildImportPreview(content);
-    final approved = await showDialog<bool>(
+    final approved =
+        await showDialog<bool>(
           context: _navigatorKey.currentContext ?? context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Import preview'),
@@ -278,7 +278,9 @@ class _CloudDaemonAppState extends State<CloudDaemonApp> {
                 Text('Add servers: ${preview.addedServers}'),
                 Text('Skip servers: ${preview.skippedServers}'),
                 Text('Add managed services: ${preview.addedManagedServices}'),
-                Text('Skip managed services: ${preview.skippedManagedServices}'),
+                Text(
+                  'Skip managed services: ${preview.skippedManagedServices}',
+                ),
                 Text('Errors: ${preview.errors.length}'),
               ],
             ),
@@ -395,12 +397,15 @@ class _ServicesPage extends StatelessWidget {
             actions: [
               FilledButton.icon(
                 key: const ValueKey('open-global-add-dialog'),
-                onPressed: controller.servers.isEmpty ? null : onAddManagedService,
+                onPressed: controller.servers.isEmpty
+                    ? null
+                    : onAddManagedService,
                 icon: const Icon(Icons.add),
                 label: const Text('Add managed service'),
               ),
               FilledButton.tonalIcon(
-                onPressed: controller.refreshingManaged && controller.refreshingCatalog
+                onPressed:
+                    controller.refreshingManaged && controller.refreshingCatalog
                     ? null
                     : () => unawaited(controller.refreshAll()),
                 icon: const Icon(Icons.refresh),
@@ -499,7 +504,8 @@ class _ServersPage extends StatelessWidget {
                 label: const Text('Export'),
               ),
               FilledButton.tonalIcon(
-                onPressed: controller.refreshingManaged && controller.refreshingCatalog
+                onPressed:
+                    controller.refreshingManaged && controller.refreshingCatalog
                     ? null
                     : () => unawaited(controller.refreshAll()),
                 icon: const Icon(Icons.refresh),
@@ -531,7 +537,8 @@ class _ServersPage extends StatelessWidget {
             const Expanded(
               child: _EmptyState(
                 title: 'No servers configured',
-                message: 'Add a server to start discovering and managing services.',
+                message:
+                    'Add a server to start discovering and managing services.',
               ),
             )
           else
@@ -570,10 +577,7 @@ class _ContentShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: child,
-      ),
+      child: Padding(padding: const EdgeInsets.all(24), child: child),
     );
   }
 }
@@ -613,10 +617,7 @@ class _PageHeader extends StatelessWidget {
 }
 
 class _SummaryChip extends StatelessWidget {
-  const _SummaryChip({
-    required this.label,
-    required this.value,
-  });
+  const _SummaryChip({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -694,8 +695,9 @@ class _ServiceGroupCard extends StatelessWidget {
               ),
               IconButton(
                 tooltip: 'Remove managed service',
-                onPressed: () =>
-                    unawaited(controller.removeManagedService(group.managedService.id)),
+                onPressed: () => unawaited(
+                  controller.removeManagedService(group.managedService.id),
+                ),
                 icon: const Icon(Icons.push_pin_outlined),
               ),
             ],
@@ -859,7 +861,8 @@ class _ServerSectionCard extends StatelessWidget {
                     onShowLogs: onShowLogs,
                     showServerLabel: false,
                   ),
-                  if (i < section.entries.length - 1) const SizedBox(height: 12),
+                  if (i < section.entries.length - 1)
+                    const SizedBox(height: 12),
                 ],
               ],
             ),
@@ -919,7 +922,8 @@ class _ManagedServiceRow extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (!showCompactServiceLayout && placement.error != null)
+                        if (!showCompactServiceLayout &&
+                            placement.error != null)
                           _StatusBadge(
                             label: 'Server issue',
                             color: _warningColor(context),
@@ -976,7 +980,9 @@ class _ManagedServiceRow extends StatelessWidget {
                                   ? Icons.stop_circle_outlined
                                   : Icons.play_circle_outline,
                             ),
-                            label: Text(primaryAction == 'stop' ? 'Stop' : 'Start'),
+                            label: Text(
+                              primaryAction == 'stop' ? 'Stop' : 'Start',
+                            ),
                           ),
                         FilledButton.tonalIcon(
                           key: ValueKey(
@@ -995,9 +1001,9 @@ class _ManagedServiceRow extends StatelessWidget {
                           onPressed: summary == null
                               ? null
                               : () => onShowLogs(
-                                    placement.server,
-                                    placement.managedService.serviceName,
-                                  ),
+                                  placement.server,
+                                  placement.managedService.serviceName,
+                                ),
                           icon: const Icon(Icons.subject),
                           label: const Text('Logs'),
                         ),
@@ -1070,9 +1076,9 @@ class _ManagedServiceRow extends StatelessWidget {
                   onPressed: summary == null
                       ? null
                       : () => onShowLogs(
-                            placement.server,
-                            placement.managedService.serviceName,
-                          ),
+                          placement.server,
+                          placement.managedService.serviceName,
+                        ),
                   icon: const Icon(Icons.subject),
                   label: const Text('Logs'),
                 ),
@@ -1109,7 +1115,9 @@ class _ManagedServiceRow extends StatelessWidget {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${placement.managedService.serviceName}: $action sent.'),
+          content: Text(
+            '${placement.managedService.serviceName}: $action sent.',
+          ),
         ),
       );
     } on ApiError catch (error) {
@@ -1142,7 +1150,8 @@ class _ManagedServicePickerDialog extends StatefulWidget {
       _ManagedServicePickerDialogState();
 }
 
-class _ManagedServicePickerDialogState extends State<_ManagedServicePickerDialog> {
+class _ManagedServicePickerDialogState
+    extends State<_ManagedServicePickerDialog> {
   final TextEditingController _searchController = TextEditingController();
 
   String? _selectedServerId;
@@ -1153,9 +1162,12 @@ class _ManagedServicePickerDialogState extends State<_ManagedServicePickerDialog
   @override
   void initState() {
     super.initState();
-    _selectedServerId = widget.initialServerId ??
+    _selectedServerId =
+        widget.initialServerId ??
         widget.controller.selectedServerId ??
-        (widget.controller.servers.isEmpty ? null : widget.controller.servers.first.id);
+        (widget.controller.servers.isEmpty
+            ? null
+            : widget.controller.servers.first.id);
     if (_selectedServerId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _selectedServerId != null) {
@@ -1197,9 +1209,15 @@ class _ManagedServicePickerDialogState extends State<_ManagedServicePickerDialog
                   service.description.toLowerCase().contains(lower);
             }).toList();
 
-            final selectedService = _selectedFrom(filtered, _selectedServiceName);
-            final alreadyAdded = selectedService != null &&
-                widget.controller.isManagedServiceTracked(selectedService.unitName);
+            final selectedService = _selectedFrom(
+              filtered,
+              _selectedServiceName,
+            );
+            final alreadyAdded =
+                selectedService != null &&
+                widget.controller.isManagedServiceTracked(
+                  selectedService.unitName,
+                );
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1243,11 +1261,16 @@ class _ManagedServicePickerDialogState extends State<_ManagedServicePickerDialog
                     ),
                     const SizedBox(width: 12),
                     FilledButton.tonalIcon(
-                      onPressed: _selectedServerId == null || widget.controller.refreshingCatalog
+                      onPressed:
+                          _selectedServerId == null ||
+                              widget.controller.refreshingCatalog
                           ? null
                           : () => unawaited(
-                                _loadCatalog(_selectedServerId!, forceRefresh: true),
+                              _loadCatalog(
+                                _selectedServerId!,
+                                forceRefresh: true,
                               ),
+                            ),
                       icon: const Icon(Icons.refresh),
                       label: const Text('Refresh'),
                     ),
@@ -1255,14 +1278,17 @@ class _ManagedServicePickerDialogState extends State<_ManagedServicePickerDialog
                 ),
                 const SizedBox(height: 16),
                 if (_selectedServerId != null &&
-                    widget.controller.serverErrors[_selectedServerId!] != null) ...[
+                    widget.controller.serverErrors[_selectedServerId!] !=
+                        null) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.errorContainer,
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Text(widget.controller.serverErrors[_selectedServerId!]!),
+                    child: Text(
+                      widget.controller.serverErrors[_selectedServerId!]!,
+                    ),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -1301,13 +1327,14 @@ class _ManagedServicePickerDialogState extends State<_ManagedServicePickerDialog
                               trailing: isAdded
                                   ? const _ListStateChip(label: 'Added')
                                   : isSelected
-                                      ? const Icon(Icons.check_circle)
-                                      : null,
+                                  ? const Icon(Icons.check_circle)
+                                  : null,
                               onTap: isAdded
                                   ? null
                                   : () => setState(
-                                        () => _selectedServiceName = service.unitName,
-                                      ),
+                                      () => _selectedServiceName =
+                                          service.unitName,
+                                    ),
                             );
                           },
                         ),
@@ -1440,10 +1467,7 @@ class _ListStateChip extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({
-    required this.title,
-    required this.message,
-  });
+  const _EmptyState({required this.title, required this.message});
 
   final String title;
   final String message;
@@ -1555,29 +1579,31 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
       _tailing = true;
       _error = null;
     });
-    _subscription = _client.tailLogs(widget.serviceName).listen(
-      (log) {
-        if (!mounted) {
-          return;
-        }
-        setState(() => _logs.insert(0, log));
-      },
-      onError: (Object error) {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _tailing = false;
-          _error = error.toString();
-        });
-      },
-      onDone: () {
-        if (!mounted) {
-          return;
-        }
-        setState(() => _tailing = false);
-      },
-    );
+    _subscription = _client
+        .tailLogs(widget.serviceName)
+        .listen(
+          (log) {
+            if (!mounted) {
+              return;
+            }
+            setState(() => _logs.insert(0, log));
+          },
+          onError: (Object error) {
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              _tailing = false;
+              _error = error.toString();
+            });
+          },
+          onDone: () {
+            if (!mounted) {
+              return;
+            }
+            setState(() => _tailing = false);
+          },
+        );
   }
 
   @override
@@ -1629,7 +1655,9 @@ class _ServiceLogsDialogState extends State<ServiceLogsDialog> {
                   ),
                   FilledButton.tonalIcon(
                     onPressed: _toggleTail,
-                    icon: Icon(_tailing ? Icons.pause_circle : Icons.play_circle),
+                    icon: Icon(
+                      _tailing ? Icons.pause_circle : Icons.play_circle,
+                    ),
                     label: Text(_tailing ? 'Stop tail' : 'Start tail'),
                   ),
                 ],
@@ -1790,9 +1818,12 @@ class _ServerFormDialogState extends State<_ServerFormDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.existing?.name ?? '');
-    _urlController =
-        TextEditingController(text: widget.existing?.baseUrl ?? 'https://');
-    _tokenController = TextEditingController(text: widget.existing?.token ?? '');
+    _urlController = TextEditingController(
+      text: widget.existing?.baseUrl ?? 'https://',
+    );
+    _tokenController = TextEditingController(
+      text: widget.existing?.token ?? '',
+    );
   }
 
   @override
@@ -1933,11 +1964,7 @@ class _ServerFormDialogState extends State<_ServerFormDialog> {
 }
 
 class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({
-    super.key,
-    required this.label,
-    required this.color,
-  });
+  const _StatusBadge({super.key, required this.label, required this.color});
 
   final String label;
   final Color color;
@@ -1953,10 +1980,7 @@ class _StatusBadge extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Text(
           label,
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(color: color, fontWeight: FontWeight.w600),
         ),
       ),
     );
@@ -1973,8 +1997,9 @@ ThemeData _buildTheme(Brightness brightness) {
   return ThemeData(
     colorScheme: scheme,
     brightness: brightness,
-    scaffoldBackgroundColor:
-        isDark ? const Color(0xFF08131D) : const Color(0xFFF2F8FD),
+    scaffoldBackgroundColor: isDark
+        ? const Color(0xFF08131D)
+        : const Color(0xFFF2F8FD),
     useMaterial3: true,
     fontFamily: 'Georgia',
     cardTheme: CardThemeData(
