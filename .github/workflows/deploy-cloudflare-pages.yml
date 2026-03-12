@@ -49,7 +49,7 @@ jobs:
 
       - name: Build web app
         working-directory: web
-        run: flutter build web
+        run: flutter build web --dart-define=CI_CD_DEPLOY_TIME=${{ github.run_started_at }}
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
