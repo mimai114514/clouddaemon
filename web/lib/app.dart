@@ -12,10 +12,10 @@ import 'web_file_io.dart';
 export 'app_controller.dart';
 
 const _uuid = Uuid();
-const ciCdDeployTime = String.fromEnvironment(
-  'CI_CD_DEPLOY_TIME',
-  defaultValue: 'local build',
-);
+const _ciCdDeployTimeRaw = String.fromEnvironment('CI_CD_DEPLOY_TIME');
+const ciCdDeployTime = _ciCdDeployTimeRaw.isEmpty
+    ? 'local build'
+    : _ciCdDeployTimeRaw;
 
 enum _AppPage { services, servers }
 
