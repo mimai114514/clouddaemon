@@ -334,6 +334,41 @@ class _AppNavigationDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!compact) {
+      return Card(
+        child: NavigationDrawer(
+          selectedIndex: currentPage.index,
+          onDestinationSelected: (index) => onSelect(_AppPage.values[index]),
+          children: const [
+            Padding(
+              padding: EdgeInsets.fromLTRB(28, 24, 28, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'CloudDaemon',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 8),
+            NavigationDrawerDestination(
+              icon: Icon(Icons.hub_outlined),
+              selectedIcon: Icon(Icons.hub),
+              label: Text('Services'),
+            ),
+            SizedBox(height: 10),
+            NavigationDrawerDestination(
+              icon: Icon(Icons.dns_outlined),
+              selectedIcon: Icon(Icons.dns),
+              label: Text('Servers'),
+            ),
+          ],
+        ),
+      );
+    }
+
     final content = ListView(
       padding: EdgeInsets.zero,
       children: [
@@ -364,15 +399,7 @@ class _AppNavigationDrawer extends StatelessWidget {
       ],
     );
 
-    if (compact) {
-      return RepaintBoundary(child: content);
-    }
-
-    return Card(
-      child: RepaintBoundary(
-        child: content,
-      ),
-    );
+    return RepaintBoundary(child: content);
   }
 }
 
